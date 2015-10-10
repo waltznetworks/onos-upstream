@@ -1,0 +1,12 @@
+machine:
+  timezone:
+    America/Los_Angeles
+  java:
+    version: oraclejdk8
+
+dependencies:
+  override:
+    - mvn clean install
+
+test:
+  override:
