@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2014-2015 Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,24 +18,26 @@ package org.onosproject.segmentrouting;
 import com.google.common.collect.Lists;
 import org.onlab.packet.Ip4Address;
 import org.onlab.packet.Ip4Prefix;
-import org.onlab.packet.IpPrefix;
 import org.onlab.packet.MacAddress;
+import org.onosproject.incubator.net.config.basics.ConfigException;
+import org.onosproject.incubator.net.config.basics.InterfaceConfig;
+import org.onosproject.incubator.net.intf.Interface;
+import org.onosproject.net.ConnectPoint;
+import org.onosproject.net.config.NetworkConfigRegistry;
+import org.onosproject.net.host.InterfaceIpAddress;
+import org.onosproject.segmentrouting.config.SegmentRoutingConfig;
+import org.onosproject.segmentrouting.config.SegmentRoutingConfig.AdjacencySid;
 import org.onosproject.segmentrouting.grouphandler.DeviceProperties;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.PortNumber;
-import org.onosproject.segmentrouting.config.NetworkConfig.SwitchConfig;
-import org.onosproject.segmentrouting.config.NetworkConfigManager;
-import org.onosproject.segmentrouting.config.SegmentRouterConfig;
-import org.onosproject.segmentrouting.config.SegmentRouterConfig.Subnet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Segment Routing configuration component that reads the
@@ -50,7 +52,6 @@ public class DeviceConfiguration implements DeviceProperties {
             .getLogger(DeviceConfiguration.class);
     private final List<Integer> allSegmentIds = new ArrayList<>();
     private final HashMap<DeviceId, SegmentRouterInfo> deviceConfigMap = new HashMap<>();
-    private final NetworkConfigManager configService;
 
     private class SegmentRouterInfo {
         int nodeSid;
@@ -60,48 +61,62 @@ public class DeviceConfiguration implements DeviceProperties {
         boolean isEdge;
         HashMap<PortNumber, Ip4Address> gatewayIps;
         HashMap<PortNumber, Ip4Prefix> subnets;
-        List<SegmentRouterConfig.AdjacencySid> adjacencySids;
+        List<AdjacencySid> adjacencySids;
     }
 
     /**
      * Constructor. Reads all the configuration for all devices of type
      * Segment Router and organizes into various maps for easier access.
      *
-     * @param configService handle to network configuration manager
-     * component from where the relevant configuration is retrieved.
+     * @param cfgService config service
      */
-    public DeviceConfiguration(NetworkConfigManager configService) {
-        this.configService = checkNotNull(configService);
-        List<SwitchConfig> allSwitchCfg =
-                this.configService.getConfiguredAllowedSwitches();
-        for (SwitchConfig cfg : allSwitchCfg) {
-            if (!(cfg instanceof SegmentRouterConfig)) {
-                continue;
-            }
+    public DeviceConfiguration(NetworkConfigRegistry cfgService) {
+        // Read config from device subject, excluding gatewayIps and subnets.
+        Set<DeviceId> deviceSubjects =
+                cfgService.getSubjects(DeviceId.class, SegmentRoutingConfig.class);
+        deviceSubjects.forEach(subject -> {
+            SegmentRoutingConfig config =
+                cfgService.getConfig(subject, SegmentRoutingConfig.class);
             SegmentRouterInfo info = new SegmentRouterInfo();
-            info.nodeSid = ((SegmentRouterConfig) cfg).getNodeSid();
-            info.deviceId = cfg.getDpid();
-            info.mac = MacAddress.valueOf(((
-                    SegmentRouterConfig) cfg).getRouterMac());
-            String routerIp = ((SegmentRouterConfig) cfg).getRouterIp();
-            Ip4Prefix prefix = checkNotNull(IpPrefix.valueOf(routerIp).getIp4Prefix());
-            info.ip = prefix.address();
-            info.isEdge = ((SegmentRouterConfig) cfg).isEdgeRouter();
-            info.subnets = new HashMap<>();
+            info.deviceId = subject;
+            info.nodeSid = config.getSid();
+            info.ip = config.getIp();
+            info.mac = config.getMac();
+            info.isEdge = config.isEdgeRouter();
+            info.adjacencySids = config.getAdjacencySids();
             info.gatewayIps = new HashMap<>();
-            for (Subnet s: ((SegmentRouterConfig) cfg).getSubnets()) {
-                info.subnets.put(PortNumber.portNumber(s.getPortNo()),
-                                 Ip4Prefix.valueOf(s.getSubnetIp()));
-                String gatewayIp = s.getSubnetIp().
-                        substring(0, s.getSubnetIp().indexOf('/'));
-                info.gatewayIps.put(PortNumber.portNumber(s.getPortNo()),
-                                    Ip4Address.valueOf(gatewayIp));
-            }
-            info.adjacencySids = ((SegmentRouterConfig) cfg).getAdjacencySids();
+            info.subnets = new HashMap<>();
+
             this.deviceConfigMap.put(info.deviceId, info);
             this.allSegmentIds.add(info.nodeSid);
+        });
 
-        }
+        // Read gatewayIps and subnets from port subject.
+        Set<ConnectPoint> portSubjects =
+            cfgService.getSubjects(ConnectPoint.class, InterfaceConfig.class);
+        portSubjects.forEach(subject -> {
+            InterfaceConfig config =
+                    cfgService.getConfig(subject, InterfaceConfig.class);
+            Set<Interface> networkInterfaces;
+            try {
+                networkInterfaces = config.getInterfaces();
+            } catch (ConfigException e) {
+                log.error("Error loading port configuration");
+                return;
+            }
+            networkInterfaces.forEach(networkInterface -> {
+                DeviceId dpid = networkInterface.connectPoint().deviceId();
+                PortNumber port = networkInterface.connectPoint().port();
+                SegmentRouterInfo info = this.deviceConfigMap.get(dpid);
+
+                Set<InterfaceIpAddress> interfaceAddresses = networkInterface.ipAddresses();
+                interfaceAddresses.forEach(interfaceAddress -> {
+                    info.gatewayIps.put(port, interfaceAddress.ipAddress().getIp4Address());
+                    info.subnets.put(port, interfaceAddress.subnetAddress().getIp4Prefix());
+                });
+            });
+
+        });
     }
 
     /**
@@ -379,8 +394,8 @@ public class DeviceConfiguration implements DeviceProperties {
      */
     public List<Integer> getPortsForAdjacencySid(DeviceId deviceId, int sid) {
         if (deviceConfigMap.get(deviceId) != null) {
-            for (SegmentRouterConfig.AdjacencySid asid : deviceConfigMap.get(deviceId).adjacencySids) {
-                if (asid.getAdjSid() == sid) {
+            for (AdjacencySid asid : deviceConfigMap.get(deviceId).adjacencySids) {
+                if (asid.getAsid() == sid) {
                     return asid.getPorts();
                 }
             }
@@ -402,9 +417,9 @@ public class DeviceConfiguration implements DeviceProperties {
             if (deviceConfigMap.get(deviceId).adjacencySids.isEmpty()) {
                 return false;
             } else {
-                for (SegmentRouterConfig.AdjacencySid asid:
+                for (AdjacencySid asid:
                         deviceConfigMap.get(deviceId).adjacencySids) {
-                    if (asid.getAdjSid() == sid) {
+                    if (asid.getAsid() == sid) {
                         return true;
                     }
                 }

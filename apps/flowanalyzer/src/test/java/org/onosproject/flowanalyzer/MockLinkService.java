@@ -154,6 +154,12 @@ public class MockLinkService extends LinkServiceAdapter {
             public State state() {
                 return ACTIVE;
             }
+            @Override
+            public int getWeight() {
+                return 1;
+            }
+            @Override
+            public void setWeight(int weight) {}
         };
         links.add(curLink);
         if (d1 instanceof DeviceId && d2 instanceof DeviceId) {

@@ -75,6 +75,15 @@
     margin: 8px 0;
 }
 
+#device-details-panel .editable {
+    cursor: pointer;
+    border-bottom: 1px dashed darkgreen;
+}
+
+#device-details-panel h2 input {
+    font-size: 1.0em;
+}
+
 #device-details-panel .top div.left {
     float: left;
     padding: 0 18px 0 0;
