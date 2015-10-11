@@ -105,6 +105,18 @@
             </completers>
         </command>
         <command>
+            <action class="org.onosproject.cli.net.DeviceControllersCommand"/>
+            <completers>
+                <ref component-id="deviceIdCompleter"/>
+            </completers>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.DeviceSetControllersCommand"/>
+            <completers>
+                <ref component-id="deviceIdCompleter"/>
+            </completers>
+        </command>
+        <command>
             <action class="org.onosproject.cli.net.DeviceRemoveCommand"/>
             <completers>
                 <ref component-id="deviceIdCompleter"/>
@@ -340,11 +352,28 @@
             <action class="org.onosproject.cli.net.InterfacesListCommand"/>
         </command>
         <command>
+            <action class="org.onosproject.cli.net.InterfaceAddCommand"/>
+            <optional-completers>
+                <entry key="-c" value-ref="connectPointCompleter"/>
+                <entry key="--connectPoint" value-ref="connectPointCompleter"/>
+            </optional-completers>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.InterfaceRemoveCommand"/>
+            <completers>
+                <ref component-id="connectPointCompleter"/>
+            </completers>
+        </command>
+        <command>
             <action class="org.onosproject.cli.net.GroupsListCommand"/>
         </command>
 
         <command>
             <action class="org.onosproject.cli.net.DevicePortStatsCommand"/>
+        </command>
+
+        <command>
+            <action class="org.onosproject.cli.net.TableStatisticsCommand"/>
         </command>
 
         <command>

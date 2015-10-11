@@ -27,6 +27,12 @@ import org.onlab.util.KryoNamespace;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
 import org.onosproject.event.Event;
+import org.onosproject.net.config.ConfigFactory;
+import org.onosproject.net.config.NetworkConfigEvent;
+import org.onosproject.net.config.NetworkConfigRegistry;
+import org.onosproject.net.config.NetworkConfigListener;
+import org.onosproject.net.config.basics.SubjectFactories;
+import org.onosproject.segmentrouting.config.SegmentRoutingConfig;
 import org.onosproject.segmentrouting.grouphandler.DefaultGroupHandler;
 import org.onosproject.segmentrouting.grouphandler.NeighborSet;
 import org.onosproject.segmentrouting.grouphandler.NeighborSetNextObjectiveStoreKey;
@@ -50,7 +56,6 @@ import org.onosproject.net.packet.PacketContext;
 import org.onosproject.net.packet.PacketProcessor;
 import org.onosproject.net.packet.PacketService;
 import org.onosproject.net.topology.TopologyService;
-import org.onosproject.segmentrouting.config.NetworkConfigManager;
 import org.onosproject.store.service.EventuallyConsistentMap;
 import org.onosproject.store.service.EventuallyConsistentMapBuilder;
 import org.onosproject.store.service.StorageService;
@@ -137,7 +142,21 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected StorageService storageService;
 
-    private NetworkConfigManager networkConfigService = new NetworkConfigManager();;
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected NetworkConfigRegistry cfgService;
+
+    private final InternalConfigListener cfgListener =
+            new InternalConfigListener(this);
+
+    private final ConfigFactory cfgFactory =
+            new ConfigFactory(SubjectFactories.DEVICE_SUBJECT_FACTORY,
+                              SegmentRoutingConfig.class,
+                              "segmentrouting") {
+                @Override
+                public SegmentRoutingConfig createConfig() {
+                    return new SegmentRoutingConfig();
+                }
+            };
 
     private Object threadSchedulerLock = new Object();
     private Object statsCollectionLock = new Object();
@@ -197,6 +216,10 @@ public class SegmentRoutingManager implements SegmentRoutingService {
                 .withTimestampProvider((k, v) -> new WallClockTimestamp())
                 .build();
 
+<<<<<<< HEAD
+        cfgService.addListener(cfgListener);
+        cfgService.registerConfigFactory(cfgFactory);
+=======
         networkConfigService.init();
         deviceConfiguration = new DeviceConfiguration(networkConfigService);
         arpHandler = new ArpHandler(this);
@@ -228,14 +251,16 @@ public class SegmentRoutingManager implements SegmentRoutingService {
             groupHandlerMap.put(device.id(), groupHandler);
             defaultRoutingHandler.populateTtpRules(device.id());
         }
+>>>>>>> waltznetworks
 
-        defaultRoutingHandler.startPopulationProcess();
         log.info("Started");
-
     }
 
     @Deactivate
     protected void deactivate() {
+        cfgService.removeListener(cfgListener);
+        cfgService.unregisterConfigFactory(cfgFactory);
+
         packetService.removeProcessor(processor);
         processor = null;
         log.info("Stopped");
@@ -546,6 +571,59 @@ public class SegmentRoutingManager implements SegmentRoutingService {
         }
     }
 
+    private class InternalConfigListener implements NetworkConfigListener {
+        SegmentRoutingManager segmentRoutingManager;
 
+        public InternalConfigListener(SegmentRoutingManager srMgr) {
+            this.segmentRoutingManager = srMgr;
+        }
 
+        public void configureNetwork() {
+            deviceConfiguration = new DeviceConfiguration(segmentRoutingManager.cfgService);
+
+            arpHandler = new ArpHandler(segmentRoutingManager);
+            icmpHandler = new IcmpHandler(segmentRoutingManager);
+            ipHandler = new IpHandler(segmentRoutingManager);
+            routingRulePopulator = new RoutingRulePopulator(segmentRoutingManager);
+            defaultRoutingHandler = new DefaultRoutingHandler(segmentRoutingManager);
+
+            tunnelHandler = new TunnelHandler(linkService, deviceConfiguration,
+                                              groupHandlerMap, tunnelStore);
+            policyHandler = new PolicyHandler(appId, deviceConfiguration,
+                                              flowObjectiveService,
+                                              tunnelHandler, policyStore);
+
+            packetService.addProcessor(processor, PacketProcessor.director(2));
+            linkService.addListener(new InternalLinkListener());
+            deviceService.addListener(new InternalDeviceListener());
+
+            for (Device device : deviceService.getDevices()) {
+                //Irrespective whether the local is a MASTER or not for this device,
+                //create group handler instance and push default TTP flow rules.
+                //Because in a multi-instance setup, instances can initiate
+                //groups for any devices. Also the default TTP rules are needed
+                //to be pushed before inserting any IP table entries for any device
+                DefaultGroupHandler groupHandler = DefaultGroupHandler
+                        .createGroupHandler(device.id(), appId,
+                                            deviceConfiguration, linkService,
+                                            flowObjectiveService,
+                                            nsNextObjStore);
+                groupHandlerMap.put(device.id(), groupHandler);
+                defaultRoutingHandler.populateTtpRules(device.id());
+            }
+
+            defaultRoutingHandler.startPopulationProcess();
+        }
+
+        @Override
+        public void event(NetworkConfigEvent event) {
+            if ((event.type() == NetworkConfigEvent.Type.CONFIG_ADDED ||
+                    event.type() == NetworkConfigEvent.Type.CONFIG_UPDATED) &&
+                    event.configClass().equals(SegmentRoutingConfig.class)) {
+                log.info("Network configuration change detected. (Re)Configuring...");
+                configureNetwork();
+                return;
+            }
+        }
+    }
 }
