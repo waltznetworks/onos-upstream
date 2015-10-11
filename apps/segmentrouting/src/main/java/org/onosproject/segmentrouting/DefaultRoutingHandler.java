@@ -47,6 +47,8 @@ public class DefaultRoutingHandler {
     private HashMap<DeviceId, ECMPShortestPathGraph> currentEcmpSpgMap;
     private HashMap<DeviceId, ECMPShortestPathGraph> updatedEcmpSpgMap;
     private DeviceConfiguration config;
+    // private Status populationStatus;
+    private boolean linkHasWeight;
     private final Lock statusLock = new ReentrantLock();
     private volatile Status populationStatus;
 
@@ -73,12 +75,13 @@ public class DefaultRoutingHandler {
      *
      * @param srManager SegmentRoutingManager object
      */
-    public DefaultRoutingHandler(SegmentRoutingManager srManager) {
+    public DefaultRoutingHandler(SegmentRoutingManager srManager, boolean linkHasWeight) {
         this.srManager = srManager;
         this.rulePopulator = checkNotNull(srManager.routingRulePopulator);
         this.config = checkNotNull(srManager.deviceConfiguration);
         this.populationStatus = Status.IDLE;
         this.currentEcmpSpgMap = Maps.newHashMap();
+        this.linkHasWeight = linkHasWeight;
     }
 
     /**
@@ -103,23 +106,21 @@ public class DefaultRoutingHandler {
                     continue;
                 }
 
-                ECMPShortestPathGraph ecmpSpg = new ECMPShortestPathGraph(sw.id(), srManager);
+                ECMPShortestPathGraph ecmpSpg = new ECMPShortestPathGraph(sw.id(), srManager, linkHasWeight);
                 if (!populateEcmpRoutingRules(sw.id(), ecmpSpg)) {
                     log.debug("populateAllRoutingRules: populationStatus is ABORTED");
                     populationStatus = Status.ABORTED;
                     log.debug("Abort routing rule population");
                     return false;
+                    currentEcmpSpgMap.put(sw.id(), ecmpSpg);
                 }
-                currentEcmpSpgMap.put(sw.id(), ecmpSpg);
 
-                // TODO: Set adjacency routing rule for all switches
+                log.debug("populateAllRoutingRules: populationStatus is SUCCEEDED");
+                populationStatus = Status.SUCCEEDED;
+                log.info("Completes routing rule population. Total # of rules pushed : {}",
+                        rulePopulator.getCounter());
+                return true;
             }
-
-            log.debug("populateAllRoutingRules: populationStatus is SUCCEEDED");
-            populationStatus = Status.SUCCEEDED;
-            log.info("Completes routing rule population. Total # of rules pushed : {}",
-                    rulePopulator.getCounter());
-            return true;
         } finally {
             statusLock.unlock();
         }
@@ -151,7 +152,7 @@ public class DefaultRoutingHandler {
                     continue;
                 }
                 ECMPShortestPathGraph ecmpSpgUpdated =
-                        new ECMPShortestPathGraph(sw.id(), srManager);
+                        new ECMPShortestPathGraph(sw.id(), srManager, linkHasWeight);
                 updatedEcmpSpgMap.put(sw.id(), ecmpSpgUpdated);
             }
 
@@ -201,7 +202,7 @@ public class DefaultRoutingHandler {
             // When only the source device is defined, reinstall routes to all other devices
             if (link.size() == 1) {
                 log.trace("repopulateRoutingRulesForRoutes: running ECMP graph for device {}", link.get(0));
-                ECMPShortestPathGraph ecmpSpg = new ECMPShortestPathGraph(link.get(0), srManager);
+                ECMPShortestPathGraph ecmpSpg = new ECMPShortestPathGraph(link.get(0), srManager, linkHasWeight);
                 if (populateEcmpRoutingRules(link.get(0), ecmpSpg)) {
                     log.debug("Populating flow rules from {} to all is successful",
                               link.get(0));
