@@ -220,7 +220,7 @@ public class SegmentRoutingManager implements SegmentRoutingService {
         cfgService.registerConfigFactory(cfgFactory);
 
         linkStatsService = new LinkStatsService(this);
-        defaultRoutingHandler = new DefaultRoutingHandler(this, false); // 'true' if links have weight
+        //defaultRoutingHandler = new DefaultRoutingHandler(this, false); // 'true' if links have weight
 
         log.info("Started");
     }

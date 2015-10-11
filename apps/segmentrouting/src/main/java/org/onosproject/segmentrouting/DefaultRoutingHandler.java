@@ -75,13 +75,13 @@ public class DefaultRoutingHandler {
      *
      * @param srManager SegmentRoutingManager object
      */
-    public DefaultRoutingHandler(SegmentRoutingManager srManager, boolean linkHasWeight) {
+    public DefaultRoutingHandler(SegmentRoutingManager srManager) {
         this.srManager = srManager;
         this.rulePopulator = checkNotNull(srManager.routingRulePopulator);
         this.config = checkNotNull(srManager.deviceConfiguration);
         this.populationStatus = Status.IDLE;
         this.currentEcmpSpgMap = Maps.newHashMap();
-        this.linkHasWeight = linkHasWeight;
+        this.linkHasWeight = false;
     }
 
     /**
@@ -112,7 +112,7 @@ public class DefaultRoutingHandler {
                     populationStatus = Status.ABORTED;
                     log.debug("Abort routing rule population");
                     return false;
-                    currentEcmpSpgMap.put(sw.id(), ecmpSpg);
+                    //currentEcmpSpgMap.put(sw.id(), ecmpSpg);
                 }
 
                 log.debug("populateAllRoutingRules: populationStatus is SUCCEEDED");
@@ -123,6 +123,7 @@ public class DefaultRoutingHandler {
             }
         } finally {
             statusLock.unlock();
+            return false;
         }
     }
 
