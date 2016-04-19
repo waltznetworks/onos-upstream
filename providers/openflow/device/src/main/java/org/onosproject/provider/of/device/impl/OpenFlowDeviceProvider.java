@@ -139,7 +139,7 @@ public class OpenFlowDeviceProvider extends AbstractProvider implements DevicePr
     private final InternalDeviceProvider listener = new InternalDeviceProvider();
 
     // TODO: We need to make the poll interval configurable.
-    static final int POLL_INTERVAL = 5;
+    static final int POLL_INTERVAL = 1;
     @Property(name = "PortStatsPollFrequency", intValue = POLL_INTERVAL,
     label = "Frequency (in seconds) for polling switch Port statistics")
     private int portStatsPollFrequency = POLL_INTERVAL;
