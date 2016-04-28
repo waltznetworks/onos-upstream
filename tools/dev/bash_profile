@@ -32,8 +32,8 @@ export PATH="$PATH:$MAVEN/bin:$KARAF_ROOT/bin"
 export ONOS_CELL=${ONOS_CELL:-local}
 
 # Setup default web user/password
-export ONOS_WEB_USER=onos
-export ONOS_WEB_PASS=rocks
+export ONOS_WEB_USER=karaf
+export ONOS_WEB_PASS=karaf
 
 # Setup default location of test scenarios
 export ONOS_SCENARIOS=$ONOS_ROOT/tools/test/scenarios
@@ -112,8 +112,8 @@ function cell {
         unset ONOS_CELL ONOS_NIC ONOS_IP ONOS_APPS ONOS_BOOT_FEATURES
         unset OCI OCN OCT ONOS_INSTANCES ONOS_USER ONOS_GROUP ONOS_FEATURES
         unset $(env | sed -n 's:\(^OC[0-9]\{1,\}\)=.*:\1 :g p')
-        export ONOS_WEB_USER=onos
-        export ONOS_WEB_PASS=rocks
+        export ONOS_WEB_USER=karaf
+        export ONOS_WEB_PASS=karaf
         export ONOS_CELL=$1
         . $ONOS_ROOT/tools/test/cells/$1
         export ONOS_INSTANCES=$(env | grep 'OC[0-9]*=' | sort | cut -d= -f2)

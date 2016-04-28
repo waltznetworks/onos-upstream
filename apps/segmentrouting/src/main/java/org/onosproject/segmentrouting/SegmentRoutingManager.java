@@ -65,6 +65,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -123,6 +124,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private InternalPacketProcessor processor = new InternalPacketProcessor();
     private InternalEventHandler eventHandler = new InternalEventHandler();
 
+    private LinkStatsService linkStatsService = null;
+    private LinkCostFunctions linkCostFunctions = new LinkCostFunctions();
+
     private ScheduledExecutorService executorService = Executors
             .newScheduledThreadPool(1);
 
@@ -155,6 +159,7 @@ public class SegmentRoutingManager implements SegmentRoutingService {
             };
 
     private Object threadSchedulerLock = new Object();
+    private Object statsCollectionLock = new Object();
     private static int numOfEventsQueued = 0;
     private static int numOfEventsExecuted = 0;
     private static int numOfHandlerExecution = 0;
@@ -213,6 +218,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
 
         cfgService.addListener(cfgListener);
         cfgService.registerConfigFactory(cfgFactory);
+
+        linkStatsService = new LinkStatsService(this);
+        //defaultRoutingHandler = new DefaultRoutingHandler(this, false); // 'true' if links have weight
 
         log.info("Started");
     }
@@ -398,15 +406,17 @@ public class SegmentRoutingManager implements SegmentRoutingService {
             try {
                 while (true) {
                     Event event = null;
-                    synchronized (threadSchedulerLock) {
-                        if (!eventQueue.isEmpty()) {
-                            event = eventQueue.poll();
-                            numOfEventsExecuted++;
-                        } else {
-                            numOfHandlerExecution++;
-                            log.debug("numOfHandlerExecution {} numOfEventsExecuted {}",
-                                      numOfHandlerExecution, numOfEventsExecuted);
-                            break;
+                    synchronized (statsCollectionLock) {
+                        synchronized (threadSchedulerLock) {
+                            if (!eventQueue.isEmpty()) {
+                                event = eventQueue.poll();
+                                numOfEventsExecuted++;
+                            } else {
+                                numOfHandlerExecution++;
+                                log.debug("numOfHandlerExecution {} numOfEventsExecuted {}",
+                                        numOfHandlerExecution, numOfEventsExecuted);
+                                break;
+                            }
                         }
                     }
                     if (event.type() == LinkEvent.Type.LINK_ADDED) {
@@ -501,6 +511,32 @@ public class SegmentRoutingManager implements SegmentRoutingService {
         DefaultGroupHandler groupHandler = groupHandlerMap.get(device.id());
         if (groupHandler != null) {
             groupHandler.portDown(port.number());
+        }
+    }
+
+    private class LinkStatsCollector implements Runnable {
+
+        private long statsCollectionInterval = 1; // unit in seconds
+
+        @Override
+        public void run() {
+            try {
+                while (true) {
+                    synchronized (statsCollectionLock) {
+                        HashMap<Link, LinkStatsService.LinkStats> linkStatsMapper = linkStatsService
+                                                                                    .stats();
+                        HashMap<Link, Double> flowRatesMapper = linkCostFunctions
+                                                                .flowRates(linkStatsMapper);
+                        // haloAlgorithm(flowRatesMapper);
+                        while (!defaultRoutingHandler.populateAllRoutingRules()) {
+                            continue;
+                        }
+                    }
+                    Thread.sleep(statsCollectionInterval * 1000); // sleep for 1 sec.
+                }
+            } catch (Exception e) {
+                log.error("LinkStatsCollector threw an Exception {}", e);
+            }
         }
     }
 
