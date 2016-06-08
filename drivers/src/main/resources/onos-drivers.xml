@@ -129,5 +129,11 @@
         <behaviour api="org.onosproject.openflow.controller.driver.OpenFlowSwitchDriver"
                    impl="org.onosproject.driver.handshaker.OFOpticalSwitch13"/>
     </driver>
+    <!--
+    <driver name="junos-netconf"
+            manufacturer="Juniper" hwVersion="MX104" swVersion="Junos 13.3R9">
+        <behaviour api="org.onosproject.driver.junos"
+                   impl="org.onosproject.driver.junos"/>
+    </driver>-->
 </drivers>
 
