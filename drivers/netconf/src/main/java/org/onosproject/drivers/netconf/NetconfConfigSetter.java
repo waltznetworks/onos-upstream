@@ -25,8 +25,6 @@ import org.onosproject.netconf.NetconfController;
 import org.slf4j.Logger;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -56,18 +54,14 @@ public class NetconfConfigSetter extends AbstractHandlerBehaviour
         Preconditions.checkNotNull(controller, "Netconf controller is null");
 
         String request;
-        try {
-            request = new String(Files.readAllBytes(Paths.get(filePath)));
-        } catch (IOException e) {
-            log.error("Cannot read configuration file", e);
-            return UNABLE_TO_READ_FILE;
-        }
+        request = filePath;
 
         try {
-            return controller.getDevicesMap()
+            boolean result =  controller.getDevicesMap()
                     .get(deviceId)
                     .getSession()
-                    .requestSync(request);
+                    .editConfig("candidate", "merge", request);
+            return result ? "Success" : "Failure";
         } catch (IOException e) {
             log.error("Configuration could not be set", e);
         }

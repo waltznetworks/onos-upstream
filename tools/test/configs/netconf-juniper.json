@@ -2,6 +2,7 @@
   "devices":{
     "netconf:132.236.59.111:830":{
       "basic":{
+        "driver":"ovs-netconf"
 	"manufacturer":"Juniper",
 	"hwVersion":"MX104",
 	"swVersion":"JunOS13.3"
