@@ -60,7 +60,7 @@ public class NetconfConfigSetter extends AbstractHandlerBehaviour
             boolean result =  controller.getDevicesMap()
                     .get(deviceId)
                     .getSession()
-                    .editConfig("candidate", "merge", request);
+                    .editAndCommitConfig("candidate", "merge", request);
             return result ? "Success" : "Failure";
         } catch (IOException e) {
             log.error("Configuration could not be set", e);

@@ -298,6 +298,36 @@ public class NetconfSessionImpl implements NetconfSession {
         return checkReply(sendRequest(rpc.toString()));
     }
 
+    public boolean editAndCommitConfig(String targetConfiguration, String mode, String newConfiguration)
+            throws NetconfException {
+        newConfiguration = newConfiguration.trim();
+        StringBuilder rpc = new StringBuilder(XML_HEADER);
+        rpc.append("<rpc ");
+        rpc.append(MESSAGE_ID_STRING);
+        rpc.append(EQUAL);
+        rpc.append("\"");
+        rpc.append(messageIdInteger.get());
+        rpc.append("\"  ");
+        rpc.append("xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n");
+        rpc.append("<edit-config>\n");
+        rpc.append("<target>");
+        rpc.append("<").append(targetConfiguration).append("/>");
+        rpc.append("</target>\n");
+        rpc.append("<default-operation>");
+        rpc.append(mode);
+        rpc.append("</default-operation>\n");
+        rpc.append("<config>\n");
+        rpc.append(newConfiguration);
+        rpc.append("</config>\n");
+        rpc.append("</edit-config>\n");
+        rpc.append("</rpc>\n");
+        rpc.append("<rpc>\n<commit/>\n</rpc>");
+        rpc.append(ENDPATTERN);
+        log.info(rpc.toString());
+        return checkReply(sendRequest(rpc.toString()));
+    }
+
+
     @Override
     public boolean copyConfig(String targetConfiguration, String newConfiguration)
             throws NetconfException {

@@ -105,6 +105,19 @@ public interface NetconfSession {
             throws NetconfException;
 
     /**
+     * Edit the specified configuration and commit the configuration changes.
+     *
+     * @param targetConfiguration the targetConfiguration to change
+     * @param mode                selected mode to change the configuration
+     * @param newConfiguration    configuration to set
+     * @return true if the configuration was edited and committed correctly
+     * @throws NetconfException when there is a problem in the communication process on
+     * the underlying connection
+     */
+    boolean editAndCommitConfig(String targetConfiguration, String mode, String newConfiguration)
+            throws NetconfException;
+
+    /**
      * Copies the new configuration, an Url or a complete configuration xml tree
      * to the target configuration.
      * The target configuration can't be the running one
