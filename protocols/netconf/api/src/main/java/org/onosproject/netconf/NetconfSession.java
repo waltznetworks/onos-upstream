@@ -81,6 +81,17 @@ public interface NetconfSession {
             throws NetconfException;
 
     /**
+     * Retrives the specified operation information.
+     *
+     * @param OperationSchema the type of operation request to retrieve.
+     * @return specified operation information.
+     * @throws NetconfException when there is a problem in the communication process on
+     * the underlying connection
+     */
+    String getOperation(String operationSchema) throws NetconfException;
+
+
+    /**
      * Retrives part of the specified configuration based on the filterSchema.
      *
      * @param newConfiguration configuration to set

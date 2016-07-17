@@ -263,6 +263,22 @@ public class NetconfSessionImpl implements NetconfSession {
         return checkReply(reply) ? reply : "ERROR " + reply;
     }
 
+    public String getOperation(String operationSchema) throws NetconfException {
+        StringBuilder rpc = new StringBuilder(XML_HEADER);
+        rpc.append("<rpc ");
+        rpc.append(MESSAGE_ID_STRING);
+        rpc.append(EQUAL);
+        rpc.append("\"");
+        rpc.append(messageIdInteger.get());
+        rpc.append("\"  ");
+        rpc.append("xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n");
+        rpc.append(operationSchema).append("\n");
+        rpc.append("</rpc>\n");
+        rpc.append(ENDPATTERN);
+        String reply = sendRequest(rpc.toString());
+        return checkReply(reply) ? reply : "ERROR " + reply;
+    }
+
     @Override
     public boolean editConfig(String newConfiguration) throws NetconfException {
         newConfiguration = newConfiguration + ENDPATTERN;

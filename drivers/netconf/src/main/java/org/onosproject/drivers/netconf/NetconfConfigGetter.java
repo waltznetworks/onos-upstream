@@ -56,7 +56,7 @@ public class NetconfConfigGetter extends AbstractHandlerBehaviour
                     get(ofDeviceId).
                     getSession().
                     //getConfig(type);
-                    get(type);
+                    getOperation(type);
         } catch (IOException e) {
             log.error("Configuration could not be retrieved {}",
                       e.getMessage());
