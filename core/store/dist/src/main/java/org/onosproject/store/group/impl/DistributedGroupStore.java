@@ -56,7 +56,9 @@ import org.onosproject.net.group.StoredGroupBucketEntry;
 import org.onosproject.net.group.StoredGroupEntry;
 import org.onosproject.store.AbstractStore;
 import org.onosproject.store.cluster.messaging.ClusterCommunicationService;
+import org.onosproject.store.primitives.AsyncConsistentMapBackedJavaMap;
 import org.onosproject.store.serializers.KryoNamespaces;
+import org.onosproject.store.service.AsyncConsistentMap;
 import org.onosproject.store.service.ConsistentMap;
 import org.onosproject.store.service.MapEvent;
 import org.onosproject.store.service.MapEventListener;
@@ -128,8 +130,9 @@ public class DistributedGroupStore
     protected ComponentConfigService cfgService;
 
     // Per device group table with (device id + app cookie) as key
-    private ConsistentMap<GroupStoreKeyMapKey,
-            StoredGroupEntry> groupStoreEntriesByKey = null;
+    private AsyncConsistentMap<GroupStoreKeyMapKey,
+                StoredGroupEntry> groupStoreEntriesByKey = null;
+    private Map<GroupStoreKeyMapKey, StoredGroupEntry> groupStoreEntriesByKeyAsJavaMap = null;
     // Per device group table with (device id + group id) as key
     private final ConcurrentMap<DeviceId, ConcurrentMap<GroupId, StoredGroupEntry>>
             groupEntriesById = new ConcurrentHashMap<>();
@@ -197,10 +200,11 @@ public class DistributedGroupStore
         groupStoreEntriesByKey = storageService.<GroupStoreKeyMapKey, StoredGroupEntry>consistentMapBuilder()
                 .withName("onos-group-store-keymap")
                 .withSerializer(serializer)
-                .build();
+                .buildAsyncMap();
         groupStoreEntriesByKey.addListener(new GroupStoreKeyMapListener());
         log.debug("Current size of groupstorekeymap:{}",
                   groupStoreEntriesByKey.size());
+        groupStoreEntriesByKeyAsJavaMap = new AsyncConsistentMapBackedJavaMap<>(groupStoreEntriesByKey);
 
         log.debug("Creating Consistent map pendinggroupkeymap");
 
@@ -254,7 +258,7 @@ public class DistributedGroupStore
      */
     private Map<GroupStoreKeyMapKey, StoredGroupEntry>
     getGroupStoreKeyMap() {
-        return groupStoreEntriesByKey.asJavaMap();
+        return groupStoreEntriesByKeyAsJavaMap;
     }
 
     /**
