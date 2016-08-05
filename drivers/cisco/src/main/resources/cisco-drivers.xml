@@ -22,4 +22,9 @@
         <behaviour api="org.onosproject.net.device.DeviceDescriptionDiscovery"
                    impl="org.onosproject.drivers.cisco.CiscoIosDeviceDescription"/>
     </driver>
+    <driver name="csr1000v-netconf" extends="netconf" manufacturer="Cisco"
+            hwVersion="CSR1000v" swVersion="IOS15.5">
+        <behaviour api="org.onosproject.net.behaviour.InterfaceConfig"
+                   impl="org.onosproject.drivers.cisco.InterfaceConfigCiscoIosImpl"/>
+    </driver>
 </drivers>
