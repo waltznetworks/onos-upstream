@@ -201,7 +201,7 @@ public class ConsistentResourceStore extends AbstractStore<ResourceEvent, Resour
                         .collect(Collectors.toList());
                 notifyDelegate(events);
             } else {
-                log.warn("Failed to unregister {}: Commit failed.", ids, error);
+                log.warn("Failed to unregister {}: Commit failed due to {}", ids, error);
             }
         }).join() == CommitStatus.SUCCESS;
     }
