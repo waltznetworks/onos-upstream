@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -93,6 +93,7 @@ public class NetconfSessionImpl implements NetconfSession {
             Collections.singletonList("urn:ietf:params:netconf:base:1.0");
     private String serverCapabilities;
     private NetconfStreamHandler streamHandler;
+    private static final int MAX_ENTRIES = 600;
     private Map<Integer, CompletableFuture<String>> replies;
     private List<String> errorReplies;
     private boolean subscriptionConnected = false;
@@ -103,7 +104,9 @@ public class NetconfSessionImpl implements NetconfSession {
         this.netconfConnection = null;
         this.sshSession = null;
         connectionActive = false;
-        replies = new HashMap<>();
+        /* Use LRUCache instead of HashMap to prevent memory leaks */
+        //replies = new HashMap<>();
+        replies = new LruCache<>(MAX_ENTRIES);
         errorReplies = new ArrayList<>();
         startConnection();
     }
@@ -604,6 +607,20 @@ public class NetconfSessionImpl implements NetconfSession {
             if (completedReply != null) {
                 completedReply.complete(event.getMessagePayload());
             }
+        }
+    }
+
+    public class LruCache<K, V> extends LinkedHashMap<K, V> {
+        private final int sizeCache;
+
+        public LruCache(int sizeCache) {
+            super(MAX_ENTRIES, 0.75f, true);
+            this.sizeCache = sizeCache;
+        }
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+            return size() > sizeCache;
         }
     }
 }
