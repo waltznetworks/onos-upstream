@@ -70,7 +70,7 @@ public class PortStatsCollector implements TimerTask {
         if (!stopped && !timeout.isCancelled()) {
             log.trace("Scheduling stats collection in {} seconds for {}",
                     this.refreshInterval, this.sw.getStringId());
-            timeout.getTimer().newTimeout(this, refreshInterval, TimeUnit.SECONDS);
+            timeout.getTimer().newTimeout(this, refreshInterval, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -102,7 +102,7 @@ public class PortStatsCollector implements TimerTask {
     public synchronized void start() {
         log.info("Starting Port Stats collection thread for {}", sw.getStringId());
         stopped = false;
-        timeout = timer.newTimeout(this, 1, TimeUnit.SECONDS);
+        timeout = timer.newTimeout(this, 1000, TimeUnit.MILLISECONDS);
     }
 
     /**
