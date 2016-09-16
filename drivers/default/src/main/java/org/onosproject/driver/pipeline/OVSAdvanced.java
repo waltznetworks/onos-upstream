@@ -504,6 +504,7 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
         }
 
         TrafficSelector filteredSelector = filteredSelectorBuilder.build();
+        filteredSelector = selector;
         TrafficTreatment treatment = treatmentBuilder
                 .build();
 
