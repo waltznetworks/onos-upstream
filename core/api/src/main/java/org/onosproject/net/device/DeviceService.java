@@ -113,6 +113,28 @@ public interface DeviceService
     List<PortStatistics> getPortDeltaStatistics(DeviceId deviceId);
 
     /**
+     * Returns the port specific port statistics associated with the device and port.
+     *
+     * @param deviceId device identifier
+     * @param portNumber port identifier
+     * @return port statistics of specified port
+     */
+    default PortStatistics getStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        return null;
+    }
+
+    /**
+     * Returns the port specific port delta statistics associated with the device and port.
+     *
+     * @param deviceId device identifier
+     * @param portNumber port identifier
+     * @return port delta statistics of specified port
+     */
+    default PortStatistics getDeltaStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        return null;
+    }
+
+    /**
      * Returns the port with the specified number and hosted by the given device.
      *
      * @param deviceId   device identifier
@@ -123,6 +145,10 @@ public interface DeviceService
 
     /**
      * Indicates whether or not the device is presently online and available.
+     * Availability, unlike reachability, denotes whether ANY node in the
+     * cluster can discover that this device is in an operational state,
+     * this does not necessarily mean that there exists a node that can
+     * control this device.
      *
      * @param deviceId device identifier
      * @return true if the device is available

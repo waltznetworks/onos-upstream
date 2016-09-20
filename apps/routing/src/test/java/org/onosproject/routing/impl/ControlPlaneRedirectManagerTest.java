@@ -24,6 +24,7 @@ import org.onlab.packet.IpAddress;
 import org.onlab.packet.IpPrefix;
 import org.onlab.packet.MacAddress;
 import org.onlab.packet.VlanId;
+import org.onosproject.app.ApplicationService;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
 import org.onosproject.core.CoreServiceAdapter;
@@ -89,7 +90,7 @@ public class ControlPlaneRedirectManagerTest {
     private static final int OSPF_IP_PROTO = 0x59;
     private CoreService coreService = new TestCoreService();
     private InterfaceService interfaceService;
-    private static final ApplicationId APPID = TestApplicationId.create("org.onosproject.cpredirect");
+    private static final ApplicationId APPID = TestApplicationId.create("org.onosproject.vrouter");
 
     private static final DeviceId DEVICE_ID = DeviceId.deviceId("of:0000000000000001");
 
@@ -111,6 +112,7 @@ public class ControlPlaneRedirectManagerTest {
     private DeviceListener deviceListener;
     private MastershipService mastershipService = new InternalMastershipServiceTest();
     private InterfaceListener interfaceListener;
+    private ApplicationService applicationService;
 
     @Before
     public void setUp() {
@@ -126,6 +128,8 @@ public class ControlPlaneRedirectManagerTest {
         networkConfigService = new TestNetworkConfigService();
         networkConfigService.addListener(networkConfigListener);
         flowObjectiveService = createMock(FlowObjectiveService.class);
+        applicationService = createNiceMock(ApplicationService.class);
+        replay(applicationService);
         setUpFlowObjectiveService();
         controlPlaneRedirectManager.coreService = coreService;
         controlPlaneRedirectManager.flowObjectiveService = flowObjectiveService;
@@ -134,6 +138,7 @@ public class ControlPlaneRedirectManagerTest {
         controlPlaneRedirectManager.deviceService = deviceService;
         controlPlaneRedirectManager.hostService = createNiceMock(HostService.class);
         controlPlaneRedirectManager.mastershipService = mastershipService;
+        controlPlaneRedirectManager.applicationService = applicationService;
         controlPlaneRedirectManager.activate();
         verify(flowObjectiveService);
     }
@@ -144,7 +149,7 @@ public class ControlPlaneRedirectManagerTest {
     @Test
     public void testAddDevice() {
         ConnectPoint sw1eth4 = new ConnectPoint(DEVICE_ID, PortNumber.portNumber(4));
-        Set<InterfaceIpAddress> interfaceIpAddresses4 = Sets.newHashSet();
+        List<InterfaceIpAddress> interfaceIpAddresses4 = new ArrayList<>();
         interfaceIpAddresses4
                 .add(new InterfaceIpAddress(IpAddress.valueOf("192.168.40.101"), IpPrefix.valueOf("192.168.40.0/24")));
 
@@ -163,7 +168,7 @@ public class ControlPlaneRedirectManagerTest {
     @Test
     public void testUpdateNetworkConfig() {
         ConnectPoint sw1eth4 = new ConnectPoint(DEVICE_ID, PortNumber.portNumber(4));
-        Set<InterfaceIpAddress> interfaceIpAddresses4 = Sets.newHashSet();
+        List<InterfaceIpAddress> interfaceIpAddresses4 = new ArrayList<>();
         interfaceIpAddresses4
                 .add(new InterfaceIpAddress(IpAddress.valueOf("192.168.40.101"), IpPrefix.valueOf("192.168.40.0/24")));
 
@@ -184,7 +189,7 @@ public class ControlPlaneRedirectManagerTest {
     @Test
     public void testAddInterface() {
         ConnectPoint sw1eth4 = new ConnectPoint(DEVICE_ID, PortNumber.portNumber(4));
-        Set<InterfaceIpAddress> interfaceIpAddresses4 = Sets.newHashSet();
+        List<InterfaceIpAddress> interfaceIpAddresses4 = new ArrayList<>();
         interfaceIpAddresses4
                 .add(new InterfaceIpAddress(IpAddress.valueOf("192.168.40.101"), IpPrefix.valueOf("192.168.40.0/24")));
 
@@ -204,7 +209,7 @@ public class ControlPlaneRedirectManagerTest {
     @Test
     public void testRemoveInterface() {
         ConnectPoint sw1eth4 = new ConnectPoint(DEVICE_ID, PortNumber.portNumber(4));
-        Set<InterfaceIpAddress> interfaceIpAddresses4 = Sets.newHashSet();
+        List<InterfaceIpAddress> interfaceIpAddresses4 = new ArrayList<>();
         interfaceIpAddresses4
                 .add(new InterfaceIpAddress(IpAddress.valueOf("192.168.40.101"), IpPrefix.valueOf("192.168.40.0/24")));
 
@@ -324,21 +329,21 @@ public class ControlPlaneRedirectManagerTest {
      * Setup Interface expectation for all Testcases.
      **/
     private void setUpInterfaceService() {
-        Set<InterfaceIpAddress> interfaceIpAddresses1 = Sets.newHashSet();
+        List<InterfaceIpAddress> interfaceIpAddresses1 = new ArrayList<>();
         interfaceIpAddresses1
                 .add(new InterfaceIpAddress(IpAddress.valueOf("192.168.10.101"), IpPrefix.valueOf("192.168.10.0/24")));
         Interface sw1Eth1 = new Interface(SW1_ETH1.deviceId().toString(), SW1_ETH1, interfaceIpAddresses1,
                 MacAddress.valueOf("00:00:00:00:00:01"), VlanId.NONE);
         interfaces.add(sw1Eth1);
 
-        Set<InterfaceIpAddress> interfaceIpAddresses2 = Sets.newHashSet();
+        List<InterfaceIpAddress> interfaceIpAddresses2 = new ArrayList<>();
         interfaceIpAddresses2
                 .add(new InterfaceIpAddress(IpAddress.valueOf("192.168.20.101"), IpPrefix.valueOf("192.168.20.0/24")));
         Interface sw1Eth2 = new Interface(SW1_ETH1.deviceId().toString(), SW1_ETH2, interfaceIpAddresses2,
                 MacAddress.valueOf("00:00:00:00:00:02"), VlanId.NONE);
         interfaces.add(sw1Eth2);
 
-        Set<InterfaceIpAddress> interfaceIpAddresses3 = Sets.newHashSet();
+        List<InterfaceIpAddress> interfaceIpAddresses3 = new ArrayList<>();
         interfaceIpAddresses3
                 .add(new InterfaceIpAddress(IpAddress.valueOf("192.168.30.101"), IpPrefix.valueOf("192.168.30.0/24")));
         Interface sw1Eth3 = new Interface(SW1_ETH1.deviceId().toString(), SW1_ETH3, interfaceIpAddresses3,

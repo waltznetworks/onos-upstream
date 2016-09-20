@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Open Networking Laboratory
+ * Copyright 2016-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,6 +59,9 @@ public abstract class ForwardingPort implements Port {
      * call {@code super.toEqualsBuilder(..)} and append fields.
      * To remove field from comparison, override this method
      * or manually implement equals().
+     *
+     * @param that object to compare to
+     * @return builder object
      */
     protected EqualsBuilder toEqualsBuilder(Port that) {
         if (that == null) {

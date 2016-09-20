@@ -27,19 +27,22 @@ import org.onosproject.event.EventDeliveryService;
 import org.onosproject.event.EventSink;
 import org.slf4j.Logger;
 
+import com.google.common.base.Stopwatch;
+
 import java.util.TimerTask;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static org.onlab.util.Tools.groupedThreads;
-import static org.slf4j.LoggerFactory.getLogger;
-
 import static org.onosproject.security.AppGuard.checkPermission;
-import static org.onosproject.security.AppPermission.Type.*;
+import static org.onosproject.security.AppPermission.Type.EVENT_READ;
+import static org.onosproject.security.AppPermission.Type.EVENT_WRITE;
+import static org.slf4j.LoggerFactory.getLogger;
 /**
  * Simple implementation of an event dispatching service.
  */
@@ -49,6 +52,8 @@ public class CoreEventDispatcher extends DefaultEventSinkRegistry
         implements EventDeliveryService {
 
     private final Logger log = getLogger(getClass());
+
+    private boolean executionTimeLimit = false;
 
     // Default number of millis a sink can take to process an event.
     private static final long DEFAULT_EXECUTE_MS = 5_000; // ms
@@ -63,14 +68,14 @@ public class CoreEventDispatcher extends DefaultEventSinkRegistry
     private static final Event KILL_PILL = new AbstractEvent(null, 0) {
     };
 
-    private DispatchLoop dispatchLoop;
+    private volatile DispatchLoop dispatchLoop;
     private long maxProcessMillis = DEFAULT_EXECUTE_MS;
 
     // Means to detect long-running sinks
     private TimerTask watchdog;
-    private EventSink lastSink;
-    private long lastStart = 0;
-    private Future<?> dispatchFuture;
+    private volatile EventSink lastSink;
+    private final Stopwatch stopwatch = Stopwatch.createUnstarted();
+    private volatile Future<?> dispatchFuture;
 
     @Override
     public void post(Event event) {
@@ -83,25 +88,48 @@ public class CoreEventDispatcher extends DefaultEventSinkRegistry
     public void activate() {
         dispatchLoop = new DispatchLoop();
         dispatchFuture = executor.submit(dispatchLoop);
-        watchdog = new Watchdog();
-        SharedExecutors.getTimer().schedule(watchdog, WATCHDOG_MS, WATCHDOG_MS);
+
+        if (maxProcessMillis != 0) {
+            startWatchdog();
+        }
+
         log.info("Started");
     }
 
     @Deactivate
     public void deactivate() {
         dispatchLoop.stop();
-        watchdog.cancel();
+        stopWatchdog();
         post(KILL_PILL);
         log.info("Stopped");
+    }
+
+    private void startWatchdog() {
+        log.info("Starting watchdog task");
+        watchdog = new Watchdog();
+        SharedExecutors.getTimer().schedule(watchdog, WATCHDOG_MS, WATCHDOG_MS);
+    }
+
+    private void stopWatchdog() {
+        log.info("Stopping watchdog task");
+        if (watchdog != null) {
+            watchdog.cancel();
+        }
     }
 
     @Override
     public void setDispatchTimeLimit(long millis) {
         checkPermission(EVENT_WRITE);
-        checkArgument(millis >= WATCHDOG_MS,
+        checkArgument(millis == 0 || millis >= WATCHDOG_MS,
                       "Time limit must be greater than %s", WATCHDOG_MS);
+        long oldMillis = maxProcessMillis;
         maxProcessMillis = millis;
+
+        if (millis == 0 && oldMillis != 0) {
+            stopWatchdog();
+        } else if (millis != 0 && oldMillis == 0) {
+            startWatchdog();
+        }
     }
 
     @Override
@@ -141,9 +169,9 @@ public class CoreEventDispatcher extends DefaultEventSinkRegistry
             EventSink sink = getSink(event.getClass());
             if (sink != null) {
                 lastSink = sink;
-                lastStart = System.currentTimeMillis();
+                stopwatch.start();
                 sink.process(event);
-                lastStart = 0;
+                stopwatch.reset();
             } else {
                 log.warn("No sink registered for event class {}",
                          event.getClass().getName());
@@ -159,11 +187,11 @@ public class CoreEventDispatcher extends DefaultEventSinkRegistry
     private class Watchdog extends TimerTask {
         @Override
         public void run() {
-            long delta = System.currentTimeMillis() - lastStart;
-            if (lastStart > 0 && delta > maxProcessMillis) {
-                lastStart = 0;
+            long elapsedTimeMillis = stopwatch.elapsed(TimeUnit.MILLISECONDS);
+            if (elapsedTimeMillis > maxProcessMillis) {
+                stopwatch.reset();
                 log.warn("Event sink {} exceeded execution time limit: {} ms; spawning new dispatch loop",
-                          lastSink.getClass().getName(), delta);
+                          lastSink.getClass().getName(), elapsedTimeMillis);
 
                 // Notify the sink that it has exceeded its time limit.
                 lastSink.onProcessLimit();

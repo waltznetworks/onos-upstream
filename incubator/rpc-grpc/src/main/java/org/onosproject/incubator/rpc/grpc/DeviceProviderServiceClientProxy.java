@@ -17,7 +17,7 @@ package org.onosproject.incubator.rpc.grpc;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.Collectors.toList;
-import static org.onosproject.incubator.rpc.grpc.GrpcDeviceUtils.translate;
+import static org.onosproject.incubator.protobuf.net.ProtobufUtils.translate;
 import static org.onosproject.net.DeviceId.deviceId;
 
 import java.util.Collection;
@@ -31,6 +31,7 @@ import org.onosproject.grpc.net.device.DeviceService.DeviceProviderServiceMsg;
 import org.onosproject.grpc.net.device.DeviceService.IsReachableRequest;
 import org.onosproject.grpc.net.device.DeviceService.RoleChanged;
 import org.onosproject.grpc.net.device.DeviceService.TriggerProbe;
+import org.onosproject.incubator.protobuf.net.ProtobufUtils;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.MastershipRole;
 import org.onosproject.net.device.DeviceDescription;
@@ -63,6 +64,8 @@ final class DeviceProviderServiceClientProxy
     private final AtomicBoolean hasShutdown = new AtomicBoolean(false);
 
     private final Channel channel;
+
+    private Throwable error;
 
     DeviceProviderServiceClientProxy(DeviceProvider provider, Channel channel) {
         super(provider);
@@ -114,7 +117,7 @@ final class DeviceProviderServiceClientProxy
         DeviceProviderServiceMsg.Builder builder = DeviceProviderServiceMsg.newBuilder();
         List<org.onosproject.grpc.net.Port.PortDescription> portDescs =
                 portDescriptions.stream()
-                    .map(GrpcDeviceUtils::translate)
+                    .map(ProtobufUtils::translate)
                     .collect(toList());
 
         builder.setUpdatePorts(builder.getUpdatePortsBuilder()
@@ -162,7 +165,7 @@ final class DeviceProviderServiceClientProxy
         DeviceProviderServiceMsg.Builder builder = DeviceProviderServiceMsg.newBuilder();
         List<org.onosproject.grpc.net.Port.PortStatistics> portStats =
                 portStatistics.stream()
-                    .map(GrpcDeviceUtils::translate)
+                    .map(ProtobufUtils::translate)
                     .collect(toList());
         builder.setUpdatePortStatistics(builder.getUpdatePortStatisticsBuilder()
                                       .setDeviceId(deviceId.toString())
@@ -193,8 +196,26 @@ final class DeviceProviderServiceClientProxy
             log.error("Shutting down session over {}", channel.authority());
             // initiate abnormal termination from client
             devProvService.onError(t);
-            invalidate();
+            invalidate(t);
         }
+    }
+
+    /**
+     * Invalidates the ProviderService indicating Failure.
+     * @param t {@link Throwable} describing last failure
+     */
+    private void invalidate(Throwable t) {
+        this.error = t;
+        invalidate();
+    }
+
+    @Override
+    public void checkValidity() {
+        if (error != null) {
+            throw new IllegalStateException("DeviceProviderService no longer valid",
+                                            error);
+        }
+        super.checkValidity();
     }
 
     @Override
@@ -271,17 +292,14 @@ final class DeviceProviderServiceClientProxy
         public void onCompleted() {
             log.info("DeviceProviderClientProxy completed");
             // session terminated from remote
-            // TODO unregister...? how?
-
-            //devProvService.onCompleted();
+            invalidate();
         }
 
         @Override
         public void onError(Throwable t) {
             log.error("DeviceProviderClientProxy#onError", t);
             // session terminated from remote
-            // TODO unregister...? how?
-            //devProvService.onError(t);
+            invalidate(t);
         }
 
         @Override

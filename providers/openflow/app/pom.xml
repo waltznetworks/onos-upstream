@@ -22,7 +22,7 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos-of-providers</artifactId>
-        <version>1.6.0</version>
+        <version>1.7.0-rc2</version>
     </parent>
 
     <artifactId>onos-openflow</artifactId>
@@ -33,9 +33,9 @@
         <onos.app.title>OpenFlow Meta App</onos.app.title>
         <onos.app.category>Provider</onos.app.category>
         <onos.app.requires>
-            org.onosproject.openflow-base,
             org.onosproject.hostprovider,
-            org.onosproject.lldpprovider
+            org.onosproject.lldpprovider,
+            org.onosproject.openflow-base
         </onos.app.requires>
         <onos.app.url>
             https://wiki.onosproject.org/display/ONOS/Application+Subsystem

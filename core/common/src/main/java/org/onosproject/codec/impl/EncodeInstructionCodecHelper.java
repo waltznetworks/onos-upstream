@@ -142,9 +142,8 @@ public final class EncodeInstructionCodecHelper {
                 result.put(InstructionCodec.MPLS_LABEL, modMplsLabelInstruction.label().toInt());
                 break;
             case MPLS_PUSH:
-                final L2ModificationInstruction.PushHeaderInstructions pushHeaderInstructions =
-                        (L2ModificationInstruction.PushHeaderInstructions) l2Instruction;
-
+                final L2ModificationInstruction.ModMplsHeaderInstruction pushHeaderInstructions =
+                        (L2ModificationInstruction.ModMplsHeaderInstruction) l2Instruction;
                 result.put(InstructionCodec.ETHERNET_TYPE,
                         pushHeaderInstructions.ethernetType().toShort());
                 break;
@@ -242,12 +241,17 @@ public final class EncodeInstructionCodecHelper {
         DeviceService deviceService = serviceDirectory.get(DeviceService.class);
         Device device = deviceService.getDevice(deviceId);
 
+        if (device == null) {
+            throw new IllegalArgumentException("Device not found");
+        }
+
         if (device.is(ExtensionTreatmentCodec.class)) {
             ExtensionTreatmentCodec treatmentCodec = device.as(ExtensionTreatmentCodec.class);
             ObjectNode node = treatmentCodec.encode(extensionInstruction.extensionInstruction(), context);
             result.set(InstructionCodec.EXTENSION, node);
         } else {
-            log.warn("There is no codec to encode extension for device {}", deviceId.toString());
+            throw new IllegalArgumentException(
+                    "There is no codec to encode extension for device " + deviceId.toString());
         }
     }
 

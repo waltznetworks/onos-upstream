@@ -22,7 +22,7 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos</artifactId>
-        <version>1.6.0</version>
+        <version>1.7.0-rc2</version>
     </parent>
 
     <artifactId>onos-drivers-general</artifactId>
@@ -43,6 +43,7 @@
         <module>bmv2</module>
         <module>corsa</module>
         <module>optical</module>
+        <module>arista</module>
     </modules>
 
     <!--<properties>
@@ -77,7 +78,6 @@
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-api</artifactId>
-            <version>${project.version}</version>
             <classifier>tests</classifier>
             <scope>test</scope>
         </dependency>

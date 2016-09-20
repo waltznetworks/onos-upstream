@@ -24,6 +24,7 @@ import org.onosproject.net.provider.ProviderId;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Test adapter for the DeviceStore API.
@@ -56,6 +57,11 @@ public class DeviceStoreAdapter implements DeviceStore {
     }
 
     @Override
+    public boolean markOnline(DeviceId deviceId) {
+        return false;
+    }
+
+    @Override
     public DeviceEvent markOffline(DeviceId deviceId) {
         return null;
     }
@@ -78,6 +84,12 @@ public class DeviceStoreAdapter implements DeviceStore {
     }
 
     @Override
+    public Stream<PortDescription> getPortDescriptions(ProviderId providerId,
+                                                       DeviceId deviceId) {
+        return Stream.empty();
+    }
+
+    @Override
     public DeviceEvent updatePortStatistics(ProviderId providerId, DeviceId deviceId,
                                             Collection<PortStatistics> portStats) {
         return null;
@@ -89,12 +101,29 @@ public class DeviceStoreAdapter implements DeviceStore {
     }
 
     @Override
+    public PortStatistics getStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        return null;
+    }
+
+    @Override
     public List<PortStatistics> getPortDeltaStatistics(DeviceId deviceId) {
         return null;
     }
 
     @Override
+    public PortStatistics getDeltaStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        return null;
+    }
+
+    @Override
     public Port getPort(DeviceId deviceId, PortNumber portNumber) {
+        return null;
+    }
+
+    @Override
+    public PortDescription getPortDescription(ProviderId providerId,
+                                              DeviceId deviceId,
+                                              PortNumber portNumber) {
         return null;
     }
 

@@ -19,8 +19,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.google.common.collect.Sets;
-import org.onlab.packet.IpAddress;
-import org.onlab.packet.IpPrefix;
 import org.onosproject.xosclient.api.OpenStackAccess;
 import org.onosproject.xosclient.api.VtnServiceApi;
 import org.onosproject.xosclient.api.XosAccess;
@@ -28,6 +26,7 @@ import org.onosproject.xosclient.api.VtnService;
 import org.onosproject.xosclient.api.VtnServiceId;
 
 import org.openstack4j.api.OSClient;
+import org.openstack4j.api.exceptions.AuthenticationException;
 import org.openstack4j.model.network.Network;
 import org.openstack4j.model.network.Subnet;
 import org.openstack4j.openstack.OSFactory;
@@ -39,12 +38,8 @@ import java.util.Set;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkArgument;
-import static org.onosproject.xosclient.api.VtnServiceApi.NetworkType.PRIVATE;
-import static org.onosproject.xosclient.api.VtnServiceApi.NetworkType.PUBLIC;
-import static org.onosproject.xosclient.api.VtnServiceApi.NetworkType.MANAGEMENT;
-import static org.onosproject.xosclient.api.VtnServiceApi.ServiceType.DEFAULT;
-import static org.onosproject.xosclient.api.VtnServiceApi.ServiceType.OLT_AGENT;
-import static org.onosproject.xosclient.api.VtnServiceApi.ServiceType.VSG;
+import static org.onosproject.xosclient.api.VtnServiceApi.NetworkType.*;
+import static org.onosproject.xosclient.api.VtnServiceApi.ServiceType.*;
 
 /**
  * Provides CORD VTN service and service dependency APIs.
@@ -149,15 +144,17 @@ public final class DefaultVtnServiceApi extends XosApi implements VtnServiceApi 
             return null;
         }
 
-        return new VtnService(serviceId,
-                              osNet.getName(),
-                              serviceType(osNet.getName()),
-                              networkType(osNet.getName()),
-                              Long.parseLong(osNet.getProviderSegID()),
-                              IpPrefix.valueOf(osSubnet.getCidr()),
-                              IpAddress.valueOf(osSubnet.getGateway()),
-                              providerServices(serviceId),
-                              tenantServices(serviceId));
+        return VtnService.build()
+                .id(serviceId)
+                .name(osNet.getName())
+                .serviceType(serviceType(osNet.getName()))
+                .networkType(networkType(osNet.getName()))
+                .vni(osNet.getProviderSegID())
+                .subnet(osSubnet.getCidr())
+                .serviceIp(osSubnet.getGateway())
+                .providerServices(providerServices(serviceId))
+                .tenantServices(tenantServices(serviceId))
+                .build();
     }
 
     // TODO remove this when XOS provides this information
@@ -166,22 +163,29 @@ public final class DefaultVtnServiceApi extends XosApi implements VtnServiceApi 
 
         // creating a client every time must be inefficient, but this method
         // will be removed once XOS provides equivalent APIs
-        return OSFactory.builder()
-                .endpoint(osAccess.endpoint())
-                .credentials(osAccess.user(), osAccess.password())
-                .tenantName(osAccess.tenant())
-                .authenticate();
+        try {
+            return OSFactory.builder()
+                    .endpoint(osAccess.endpoint())
+                    .credentials(osAccess.user(), osAccess.password())
+                    .tenantName(osAccess.tenant())
+                    .authenticate();
+        } catch (AuthenticationException e) {
+            log.warn("Failed to authenticate OpenStack API with {}", osAccess);
+            return null;
+        }
     }
 
     // TODO remove this when XOS provides this information
     private NetworkType networkType(String netName) {
-        checkArgument(!Strings.isNullOrEmpty(netName));
+        checkArgument(!Strings.isNullOrEmpty(netName), "VTN network name cannot be null");
 
         String name = netName.toUpperCase();
         if (name.contains(PUBLIC.name())) {
             return PUBLIC;
-        } else if (name.contains(MANAGEMENT.name())) {
-            return MANAGEMENT;
+        } else if (name.contains(MANAGEMENT_HOSTS.name())) {
+            return MANAGEMENT_HOSTS;
+        } else if (name.contains("MANAGEMENT")) {
+            return MANAGEMENT_LOCAL;
         } else {
             return PRIVATE;
         }
@@ -189,13 +193,13 @@ public final class DefaultVtnServiceApi extends XosApi implements VtnServiceApi 
 
     // TODO remove this when XOS provides this information
     private ServiceType serviceType(String netName) {
-        checkArgument(!Strings.isNullOrEmpty(netName));
+        checkArgument(!Strings.isNullOrEmpty(netName), "VTN network name cannot be null");
 
         String name = netName.toUpperCase();
         if (name.contains(VSG.name())) {
             return VSG;
-        } else if (name.contains(OLT_AGENT.name())) {
-            return OLT_AGENT;
+        } else if (name.contains(ACCESS_AGENT.name())) {
+            return ACCESS_AGENT;
         } else if (name.contains(ServiceType.MANAGEMENT.name())) {
             return ServiceType.MANAGEMENT;
         } else {

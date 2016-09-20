@@ -23,20 +23,26 @@ import org.apache.felix.scr.annotations.Deactivate;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
+import org.onlab.packet.IpAddress;
+import org.onlab.packet.MacAddress;
+import org.onlab.packet.VlanId;
 import org.onlab.util.KryoNamespace;
 import org.onosproject.core.CoreService;
 import org.onosproject.core.IdGenerator;
 import org.onosproject.incubator.net.tunnel.TunnelId;
 import org.onosproject.incubator.net.virtual.DefaultVirtualDevice;
+import org.onosproject.incubator.net.virtual.DefaultVirtualHost;
 import org.onosproject.incubator.net.virtual.DefaultVirtualLink;
 import org.onosproject.incubator.net.virtual.DefaultVirtualNetwork;
 import org.onosproject.incubator.net.virtual.DefaultVirtualPort;
 import org.onosproject.incubator.net.virtual.NetworkId;
 import org.onosproject.incubator.net.virtual.TenantId;
 import org.onosproject.incubator.net.virtual.VirtualDevice;
+import org.onosproject.incubator.net.virtual.VirtualHost;
 import org.onosproject.incubator.net.virtual.VirtualLink;
 import org.onosproject.incubator.net.virtual.VirtualNetwork;
 import org.onosproject.incubator.net.virtual.VirtualNetworkEvent;
+import org.onosproject.incubator.net.virtual.VirtualNetworkIntent;
 import org.onosproject.incubator.net.virtual.VirtualNetworkService;
 import org.onosproject.incubator.net.virtual.VirtualNetworkStore;
 import org.onosproject.incubator.net.virtual.VirtualNetworkStoreDelegate;
@@ -44,9 +50,15 @@ import org.onosproject.incubator.net.virtual.VirtualPort;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.Device;
 import org.onosproject.net.DeviceId;
+import org.onosproject.net.HostId;
+import org.onosproject.net.HostLocation;
 import org.onosproject.net.Link;
 import org.onosproject.net.Port;
 import org.onosproject.net.PortNumber;
+import org.onosproject.net.intent.Intent;
+import org.onosproject.net.intent.IntentData;
+import org.onosproject.net.intent.IntentState;
+import org.onosproject.net.intent.Key;
 import org.onosproject.store.AbstractStore;
 import org.onosproject.store.serializers.KryoNamespaces;
 import org.onosproject.store.service.ConsistentMap;
@@ -57,6 +69,7 @@ import org.onosproject.store.service.Serializer;
 import org.onosproject.store.service.SetEvent;
 import org.onosproject.store.service.SetEventListener;
 import org.onosproject.store.service.StorageService;
+import org.onosproject.store.service.WallClockTimestamp;
 import org.slf4j.Logger;
 
 import java.util.HashSet;
@@ -111,6 +124,14 @@ public class DistributedVirtualNetworkStore
     private ConsistentMap<NetworkId, Set<DeviceId>> networkIdDeviceIdSetConsistentMap;
     private Map<NetworkId, Set<DeviceId>> networkIdDeviceIdSetMap;
 
+    // Track virtual hosts by host Id
+    private ConsistentMap<HostId, VirtualHost> hostIdVirtualHostConsistentMap;
+    private Map<HostId, VirtualHost> hostIdVirtualHostMap;
+
+    // Track host IDs by network Id
+    private ConsistentMap<NetworkId, Set<HostId>> networkIdHostIdSetConsistentMap;
+    private Map<NetworkId, Set<HostId>> networkIdHostIdSetMap;
+
     // Track virtual links by network Id
     private ConsistentMap<NetworkId, Set<VirtualLink>> networkIdVirtualLinkSetConsistentMap;
     private Map<NetworkId, Set<VirtualLink>> networkIdVirtualLinkSetMap;
@@ -118,6 +139,14 @@ public class DistributedVirtualNetworkStore
     // Track virtual ports by network Id
     private ConsistentMap<NetworkId, Set<VirtualPort>> networkIdVirtualPortSetConsistentMap;
     private Map<NetworkId, Set<VirtualPort>> networkIdVirtualPortSetMap;
+
+    // Track intent key to intent data
+    private ConsistentMap<Key, IntentData> intentKeyIntentDataConsistentMap;
+    private Map<Key, IntentData> intentKeyIntentDataMap;
+
+    // Track intent ID to TunnelIds
+    private ConsistentMap<Key, Set<TunnelId>> intentKeyTunnelIdSetConsistentMap;
+    private Map<Key, Set<TunnelId>> intentKeyTunnelIdSetMap;
 
     private static final Serializer SERIALIZER = Serializer
             .using(new KryoNamespace.Builder().register(KryoNamespaces.API)
@@ -127,14 +156,19 @@ public class DistributedVirtualNetworkStore
                            .register(DefaultVirtualNetwork.class)
                            .register(VirtualDevice.class)
                            .register(DefaultVirtualDevice.class)
+                           .register(VirtualHost.class)
+                           .register(DefaultVirtualHost.class)
                            .register(VirtualLink.class)
                            .register(DefaultVirtualLink.class)
                            .register(VirtualPort.class)
                            .register(DefaultVirtualPort.class)
                            .register(Device.class)
                            .register(TunnelId.class)
+                           .register(IntentData.class)
+                           .register(VirtualNetworkIntent.class)
+                           .register(WallClockTimestamp.class)
                            .nextId(KryoNamespaces.BEGIN_USER_CUSTOM_ID)
-                           .build("VirtualNetworkStore"));
+                           .build());
 
     /**
      * Distributed network store service activate method.
@@ -180,6 +214,20 @@ public class DistributedVirtualNetworkStore
                 .build();
         networkIdDeviceIdSetMap = networkIdDeviceIdSetConsistentMap.asJavaMap();
 
+        hostIdVirtualHostConsistentMap = storageService.<HostId, VirtualHost>consistentMapBuilder()
+                .withSerializer(SERIALIZER)
+                .withName("onos-hostId-virtualhost")
+                .withRelaxedReadConsistency()
+                .build();
+        hostIdVirtualHostMap = hostIdVirtualHostConsistentMap.asJavaMap();
+
+        networkIdHostIdSetConsistentMap = storageService.<NetworkId, Set<HostId>>consistentMapBuilder()
+                .withSerializer(SERIALIZER)
+                .withName("onos-networkId-hostIds")
+                .withRelaxedReadConsistency()
+                .build();
+        networkIdHostIdSetMap = networkIdHostIdSetConsistentMap.asJavaMap();
+
         networkIdVirtualLinkSetConsistentMap = storageService.<NetworkId, Set<VirtualLink>>consistentMapBuilder()
                 .withSerializer(SERIALIZER)
                 .withName("onos-networkId-virtuallinks")
@@ -189,10 +237,24 @@ public class DistributedVirtualNetworkStore
 
         networkIdVirtualPortSetConsistentMap = storageService.<NetworkId, Set<VirtualPort>>consistentMapBuilder()
                 .withSerializer(SERIALIZER)
-                .withName("onos-networkId-virtualportss")
+                .withName("onos-networkId-virtualports")
                 .withRelaxedReadConsistency()
                 .build();
         networkIdVirtualPortSetMap = networkIdVirtualPortSetConsistentMap.asJavaMap();
+
+        intentKeyTunnelIdSetConsistentMap = storageService.<Key, Set<TunnelId>>consistentMapBuilder()
+                .withSerializer(SERIALIZER)
+                .withName("onos-intentKey-tunnelIds")
+                .withRelaxedReadConsistency()
+                .build();
+        intentKeyTunnelIdSetMap = intentKeyTunnelIdSetConsistentMap.asJavaMap();
+
+        intentKeyIntentDataConsistentMap = storageService.<Key, IntentData>consistentMapBuilder()
+                .withSerializer(SERIALIZER)
+                .withName("onos-intentKey-intentData")
+                .withRelaxedReadConsistency()
+                .build();
+        intentKeyIntentDataMap = intentKeyIntentDataConsistentMap.asJavaMap();
 
         log.info("Started");
     }
@@ -256,9 +318,13 @@ public class DistributedVirtualNetworkStore
      * @return NetworkId network identifier
      */
     private NetworkId genNetworkId() {
-        return NetworkId.networkId(idGenerator.getNewId());
-    }
+        NetworkId networkId;
+        do {
+            networkId = NetworkId.networkId(idGenerator.getNewId());
+        } while (!networkId.isVirtualNetworkId());
 
+        return networkId;
+    }
 
     @Override
     public void removeNetwork(NetworkId networkId) {
@@ -337,6 +403,48 @@ public class DistributedVirtualNetworkStore
             });
 
             deviceIdVirtualDeviceMap.remove(deviceId);
+        }
+        //TODO remove virtual links and ports when removing the virtual device
+    }
+
+    @Override
+    public VirtualHost addHost(NetworkId networkId, HostId hostId, MacAddress mac,
+                               VlanId vlan, HostLocation location, Set<IpAddress> ips) {
+        checkState(networkExists(networkId), "The network has not been added.");
+        Set<HostId> hostIdSet = networkIdHostIdSetMap.get(networkId);
+        if (hostIdSet == null) {
+            hostIdSet = new HashSet<>();
+        }
+        VirtualHost virtualhost = new DefaultVirtualHost(networkId, hostId, mac, vlan, location, ips);
+        //TODO update both maps in one transaction.
+        hostIdVirtualHostMap.put(hostId, virtualhost);
+        hostIdSet.add(hostId);
+        networkIdHostIdSetMap.put(networkId, hostIdSet);
+        return virtualhost;
+    }
+
+    @Override
+    public void removeHost(NetworkId networkId, HostId hostId) {
+        checkState(networkExists(networkId), "The network has not been added.");
+        //TODO update both maps in one transaction.
+
+        Set<HostId> hostIdSet = new HashSet<>();
+        networkIdHostIdSetMap.get(networkId).forEach(hostId1 -> {
+            if (hostId1.equals(hostId)) {
+                hostIdSet.add(hostId1);
+            }
+        });
+
+        if (hostIdSet != null) {
+            networkIdHostIdSetMap.compute(networkId, (id, existingHostIds) -> {
+                if (existingHostIds == null || existingHostIds.isEmpty()) {
+                    return new HashSet<>();
+                } else {
+                    return new HashSet<>(Sets.difference(existingHostIds, hostIdSet));
+                }
+            });
+
+            hostIdVirtualHostMap.remove(hostId);
         }
     }
 
@@ -456,6 +564,11 @@ public class DistributedVirtualNetworkStore
     }
 
     @Override
+    public VirtualNetwork getNetwork(NetworkId networkId) {
+        return networkIdVirtualNetworkMap.get(networkId);
+    }
+
+    @Override
     public Set<VirtualDevice> getDevices(NetworkId networkId) {
         checkState(networkExists(networkId), "The network has not been added.");
         Set<DeviceId> deviceIdSet = networkIdDeviceIdSetMap.get(networkId);
@@ -464,6 +577,17 @@ public class DistributedVirtualNetworkStore
             deviceIdSet.forEach(deviceId -> virtualDeviceSet.add(deviceIdVirtualDeviceMap.get(deviceId)));
         }
         return ImmutableSet.copyOf(virtualDeviceSet);
+    }
+
+    @Override
+    public Set<VirtualHost> getHosts(NetworkId networkId) {
+        checkState(networkExists(networkId), "The network has not been added.");
+        Set<HostId> hostIdSet = networkIdHostIdSetMap.get(networkId);
+        Set<VirtualHost> virtualHostSet = new HashSet<>();
+        if (hostIdSet != null) {
+            hostIdSet.forEach(hostId -> virtualHostSet.add(hostIdVirtualHostMap.get(hostId)));
+        }
+        return ImmutableSet.copyOf(virtualHostSet);
     }
 
     @Override
@@ -512,6 +636,85 @@ public class DistributedVirtualNetworkStore
             }
         });
         return ImmutableSet.copyOf(portSet);
+    }
+
+    @Override
+    public synchronized void addOrUpdateIntent(Intent intent, IntentState state) {
+        checkNotNull(intent, "Intent cannot be null");
+        IntentData intentData = removeIntent(intent.key());
+        if (intentData == null) {
+            intentData = new IntentData(intent, state, new WallClockTimestamp(System.currentTimeMillis()));
+        } else {
+            intentData = new IntentData(intent, state, intentData.version());
+        }
+        intentKeyIntentDataMap.put(intent.key(), intentData);
+    }
+
+    @Override
+    public IntentData removeIntent(Key intentKey) {
+        checkNotNull(intentKey, "Intent key cannot be null");
+        return intentKeyIntentDataMap.remove(intentKey);
+    }
+
+    @Override
+    public void addTunnelId(Intent intent, TunnelId tunnelId) {
+        // Add the tunnelId to the intent key set map
+        Set<TunnelId> tunnelIdSet = intentKeyTunnelIdSetMap.remove(intent.key());
+        if (tunnelIdSet == null) {
+            tunnelIdSet = new HashSet<>();
+        }
+        tunnelIdSet.add(tunnelId);
+        intentKeyTunnelIdSetMap.put(intent.key(), tunnelIdSet);
+    }
+
+    @Override
+    public Set<TunnelId> getTunnelIds(Intent intent) {
+        Set<TunnelId> tunnelIdSet = intentKeyTunnelIdSetMap.get(intent.key());
+        return tunnelIdSet == null ? new HashSet<TunnelId>() : ImmutableSet.copyOf(tunnelIdSet);
+    }
+
+    @Override
+    public void removeTunnelId(Intent intent, TunnelId tunnelId) {
+        Set<TunnelId> tunnelIdSet = new HashSet<>();
+        intentKeyTunnelIdSetMap.get(intent.key()).forEach(tunnelId1 -> {
+            if (tunnelId1.equals(tunnelId)) {
+                tunnelIdSet.add(tunnelId);
+            }
+        });
+
+        if (!tunnelIdSet.isEmpty()) {
+            intentKeyTunnelIdSetMap.compute(intent.key(), (key, existingTunnelIds) -> {
+                if (existingTunnelIds == null || existingTunnelIds.isEmpty()) {
+                    return new HashSet<>();
+                } else {
+                    return new HashSet<>(Sets.difference(existingTunnelIds, tunnelIdSet));
+                }
+            });
+        }
+    }
+
+    @Override
+    public Set<Intent> getIntents() {
+        Set<Intent> intents = new HashSet<>();
+        intentKeyIntentDataMap.values().forEach(intentData -> intents.add(intentData.intent()));
+        return ImmutableSet.copyOf(intents);
+    }
+
+    @Override
+    public Intent getIntent(Key key) {
+        IntentData intentData = intentKeyIntentDataMap.get(key);
+        return intentData == null ? null : intentData.intent();
+    }
+
+    @Override
+    public Set<IntentData> getIntentData() {
+        return ImmutableSet.copyOf(intentKeyIntentDataMap.values());
+    }
+
+    @Override
+    public IntentData getIntentData(Key key) {
+        IntentData intentData = intentKeyIntentDataMap.get(key);
+        return intentData ==  null ? null : new IntentData(intentData);
     }
 
     /**

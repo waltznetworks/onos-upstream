@@ -22,18 +22,17 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos-apps</artifactId>
-        <version>1.6.0</version>
+        <version>1.7.0-rc2</version>
     </parent>
 
     <artifactId>onos-app-openstacknetworking</artifactId>
     <packaging>pom</packaging>
 
     <modules>
-        <module>app</module>
-        <module>web</module>
         <module>api</module>
-        <module>openstackswitching</module>
-        <module>openstackrouting</module>
+        <module>web</module>
+        <module>switching</module>
+        <module>routing</module>
     </modules>
 
     <description>SONA Openstack Networking Application</description>

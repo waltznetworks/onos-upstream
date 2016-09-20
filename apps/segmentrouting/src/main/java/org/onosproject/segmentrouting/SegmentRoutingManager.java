@@ -90,7 +90,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -103,6 +102,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Preconditions.checkState;
+import static org.onlab.util.Tools.groupedThreads;
 
 
 /**
@@ -178,16 +178,13 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private final InternalMcastListener mcastListener = new InternalMcastListener();
     private final InternalCordConfigListener cordConfigListener = new InternalCordConfigListener();
 
-    private LinkStatsService linkStatsService = null;
-    private LinkCostFunctions linkCostFunctions = new LinkCostFunctions();
-
     private ScheduledExecutorService executorService = Executors
-            .newScheduledThreadPool(1);
+            .newScheduledThreadPool(1, groupedThreads("SegmentRoutingManager", "event-%d", log));
 
     @SuppressWarnings("unused")
     private static ScheduledFuture<?> eventHandlerFuture = null;
     @SuppressWarnings("rawtypes")
-    private ConcurrentLinkedQueue<Event> eventQueue = new ConcurrentLinkedQueue<Event>();
+    private ConcurrentLinkedQueue<Event> eventQueue = new ConcurrentLinkedQueue<>();
     private Map<DeviceId, DefaultGroupHandler> groupHandlerMap =
             new ConcurrentHashMap<>();
     /**
@@ -250,7 +247,6 @@ public class SegmentRoutingManager implements SegmentRoutingService {
             };
 
     private Object threadSchedulerLock = new Object();
-    private Object statsCollectionLock = new Object();
     private static int numOfEventsQueued = 0;
     private static int numOfEventsExecuted = 0;
     private static int numOfHandlerExecution = 0;
@@ -683,17 +679,15 @@ public class SegmentRoutingManager implements SegmentRoutingService {
                 while (true) {
                     @SuppressWarnings("rawtypes")
                     Event event = null;
-                    synchronized (statsCollectionLock) {
-                        synchronized (threadSchedulerLock) {
-                            if (!eventQueue.isEmpty()) {
-                                event = eventQueue.poll();
-                                numOfEventsExecuted++;
-                            } else {
-                                numOfHandlerExecution++;
-                                log.debug("numOfHandlerExecution {} numOfEventsExecuted {}",
-                                        numOfHandlerExecution, numOfEventsExecuted);
-                                break;
-                            }
+                    synchronized (threadSchedulerLock) {
+                        if (!eventQueue.isEmpty()) {
+                            event = eventQueue.poll();
+                            numOfEventsExecuted++;
+                        } else {
+                            numOfHandlerExecution++;
+                            log.debug("numOfHandlerExecution {} numOfEventsExecuted {}",
+                                      numOfHandlerExecution, numOfEventsExecuted);
+                            break;
                         }
                     }
                     if (event.type() == LinkEvent.Type.LINK_ADDED) {
@@ -719,7 +713,7 @@ public class SegmentRoutingManager implements SegmentRoutingService {
                     } else if (event.type() == DeviceEvent.Type.PORT_ADDED ||
                             event.type() == DeviceEvent.Type.PORT_UPDATED) {
                         log.info("** PORT ADDED OR UPDATED {}/{} -> {}",
-                                 (Device) event.subject(),
+                                 event.subject(),
                                  ((DeviceEvent) event).port(),
                                  event.type());
                         /* XXX create method for single port filtering rules
@@ -910,7 +904,6 @@ public class SegmentRoutingManager implements SegmentRoutingService {
             policyHandler = new PolicyHandler(appId, deviceConfiguration,
                                               flowObjectiveService,
                                               tunnelHandler, policyStore);
-            linkStatsService = new LinkStatsService(segmentRoutingManager);
 
             for (Device device : deviceService.getDevices()) {
                 processDeviceAddedInternal(device.id());
@@ -1041,31 +1034,4 @@ public class SegmentRoutingManager implements SegmentRoutingService {
             }
         }
     }
-
-    private class LinkStatsCollector implements Runnable {
-
-        private long statsCollectionInterval = 1; // unit in seconds
-
-        @Override
-        public void run() {
-            try {
-                while (true) {
-                    synchronized (statsCollectionLock) {
-                        HashMap<Link, LinkStatsService.LinkStats> linkStatsMapper = linkStatsService
-                                                                                    .stats();
-                        HashMap<Link, Double> flowRatesMapper = linkCostFunctions
-                                                                .flowRates(linkStatsMapper);
-                        // haloAlgorithm(flowRatesMapper);
-                        while (!defaultRoutingHandler.populateAllRoutingRules()) {
-                            continue;
-                        }
-                    }
-                    Thread.sleep(statsCollectionInterval * 1000); // sleep for 1 sec.
-                }
-            } catch (Exception e) {
-                log.error("LinkStatsCollector threw an Exception {}", e);
-            }
-        }
-    }
-
 }

@@ -15,12 +15,21 @@
  */
 package org.onosproject.incubator.net.virtual;
 
+import org.onlab.packet.IpAddress;
+import org.onlab.packet.MacAddress;
+import org.onlab.packet.VlanId;
 import org.onosproject.incubator.net.tunnel.TunnelId;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.DeviceId;
+import org.onosproject.net.HostId;
+import org.onosproject.net.HostLocation;
 import org.onosproject.net.Link;
 import org.onosproject.net.Port;
 import org.onosproject.net.PortNumber;
+import org.onosproject.net.intent.Intent;
+import org.onosproject.net.intent.IntentData;
+import org.onosproject.net.intent.IntentState;
+import org.onosproject.net.intent.Key;
 import org.onosproject.store.Store;
 
 import java.util.Set;
@@ -77,12 +86,34 @@ public interface VirtualNetworkStore
     VirtualDevice addDevice(NetworkId networkId, DeviceId deviceId);
 
     /**
-     * Renmoves the specified virtual device from the given network.
+     * Removes the specified virtual device from the given network.
      *
      * @param networkId network identifier
      * @param deviceId  device identifier
      */
     void removeDevice(NetworkId networkId, DeviceId deviceId);
+
+    /**
+     * Adds a new virtual host to the store.
+     *
+     * @param networkId network identifier
+     * @param hostId    host identifier
+     * @param mac       mac address
+     * @param vlan      vlan identifier
+     * @param location  host location
+     * @param ips       set of ip addresses
+     * @return the virtual host
+     */
+    VirtualHost addHost(NetworkId networkId, HostId hostId, MacAddress mac,
+                        VlanId vlan, HostLocation location, Set<IpAddress> ips);
+
+    /**
+     * Removes the specified virtual host from the store.
+     *
+     * @param networkId network identifier
+     * @param hostId    host identifier
+     */
+    void removeHost(NetworkId networkId, HostId hostId);
 
     /**
      * Adds a new virtual link.
@@ -145,12 +176,28 @@ public interface VirtualNetworkStore
     Set<VirtualNetwork> getNetworks(TenantId tenantId);
 
     /**
+     * Returns the virtual network for the given network identifier.
+     *
+     * @param networkId network identifier
+     * @return the virtual network
+     */
+    VirtualNetwork getNetwork(NetworkId networkId);
+
+    /**
      * Returns the list of devices in the specified virtual network.
      *
      * @param networkId network identifier
      * @return set of virtual devices
      */
     Set<VirtualDevice> getDevices(NetworkId networkId);
+
+    /**
+     * Returns the list of hosts in the specified virtual network.
+     *
+     * @param networkId network identifier
+     * @return set of virtual hosts
+     */
+    Set<VirtualHost> getHosts(NetworkId networkId);
 
     /**
      * Returns the list of virtual links in the specified virtual network.
@@ -180,4 +227,73 @@ public interface VirtualNetworkStore
      */
     Set<VirtualPort> getPorts(NetworkId networkId, DeviceId deviceId);
 
+    /**
+     * Add or update the intent to the store.
+     *
+     * @param intent virtual intent
+     * @param state  intent state
+     */
+    void addOrUpdateIntent(Intent intent, IntentState state);
+
+    /**
+     * Remove the virtual intent from the store.
+     *
+     * @param intentKey intent key
+     * @return intent data
+     */
+    IntentData removeIntent(Key intentKey);
+
+    /**
+     * Adds the intent to tunnel identifier mapping to the store.
+     *
+     * @param intent   intent
+     * @param tunnelId tunnel identifier
+     */
+    void addTunnelId(Intent intent, TunnelId tunnelId);
+
+    /**
+     * Return the set of tunnel identifiers store against the intent.
+     *
+     * @param intent intent
+     * @return set of tunnel identifiers
+     */
+    Set<TunnelId> getTunnelIds(Intent intent);
+
+    /**
+     * Removes the intent to tunnel identifier mapping from the store.
+     *
+     * @param intent   intent
+     * @param tunnelId tunnel identifier
+     */
+    void removeTunnelId(Intent intent, TunnelId tunnelId);
+
+    /**
+     * Return all intents.
+     *
+     * @return set of intents
+     */
+    Set<Intent> getIntents();
+
+    /**
+     * Return the intent for the specified intent key.
+     *
+     * @param key intent key
+     * @return intent
+     */
+    Intent getIntent(Key key);
+
+    /**
+     * Return the set of intent data.
+     *
+     * @return set of intent data
+     */
+    Set<IntentData> getIntentData();
+
+    /**
+     * Return the intent data matching the intent key.
+     *
+     * @param key intent key
+     * @return intent data
+     */
+    IntentData getIntentData(Key key);
 }

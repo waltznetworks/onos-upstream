@@ -16,6 +16,7 @@ osgi_jar(
   srcs = glob([SRC + '/*.java']),
   deps = COMPILE_DEPS,
   visibility = ['PUBLIC'],
+  package_name_root = 'org.onlab',
 )
 
 java_test(
@@ -24,6 +25,5 @@ java_test(
   deps = COMPILE_DEPS +
          TEST_DEPS +
          [CURRENT_TARGET],
-  source_under_test = [CURRENT_TARGET],
   visibility = ['PUBLIC'],
 )

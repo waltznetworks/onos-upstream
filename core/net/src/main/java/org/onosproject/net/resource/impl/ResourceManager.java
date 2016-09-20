@@ -84,7 +84,7 @@ public final class ResourceManager extends AbstractListenerManager<ResourceEvent
 
     @Override
     public List<ResourceAllocation> allocate(ResourceConsumer consumer,
-                                             List<Resource> resources) {
+                                             List<? extends Resource> resources) {
         checkPermission(RESOURCE_WRITE);
         checkNotNull(consumer);
         checkNotNull(resources);
@@ -165,9 +165,9 @@ public final class ResourceManager extends AbstractListenerManager<ResourceEvent
         checkNotNull(parent);
         checkNotNull(cls);
 
-        // naive implementation
-        return getAvailableResources(parent).stream()
-                .filter(resource -> resource.isTypeOf(cls))
+        return store.getChildResources(parent, cls).stream()
+                // We access store twice in this method, then the store may be updated by others
+                .filter(store::isAvailable)
                 .collect(Collectors.toSet());
     }
 
@@ -177,9 +177,11 @@ public final class ResourceManager extends AbstractListenerManager<ResourceEvent
         checkNotNull(parent);
         checkNotNull(cls);
 
-        // naive implementation
-        return getAvailableResources(parent).stream()
-                .flatMap(resource -> Tools.stream(resource.valueAs(cls)))
+        return store.getChildResources(parent, cls).stream()
+                // We access store twice in this method, then the store may be updated by others
+                .filter(store::isAvailable)
+                .map(x -> x.valueAs(cls))
+                .flatMap(Tools::stream)
                 .collect(Collectors.toSet());
     }
 
@@ -200,14 +202,14 @@ public final class ResourceManager extends AbstractListenerManager<ResourceEvent
     }
 
     @Override
-    public boolean register(List<Resource> resources) {
+    public boolean register(List<? extends Resource> resources) {
         checkNotNull(resources);
 
         return store.register(resources);
     }
 
     @Override
-    public boolean unregister(List<ResourceId> ids) {
+    public boolean unregister(List<? extends ResourceId> ids) {
         checkNotNull(ids);
 
         return store.unregister(ids);

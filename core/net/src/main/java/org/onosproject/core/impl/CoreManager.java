@@ -64,7 +64,7 @@ public class CoreManager implements CoreService {
     private final Logger log = LoggerFactory.getLogger(getClass());
 
     private static final File VERSION_FILE = new File("../VERSION");
-    private static Version version = Version.version("1.6.0");
+    private static Version version = Version.version("1.7.0-SNAPSHOT");
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected ApplicationIdStore applicationIdStore;
@@ -101,7 +101,7 @@ public class CoreManager implements CoreService {
 
 
     @Activate
-    public void activate() {
+    protected void activate() {
         registerApplication(CORE_APP_NAME);
         cfgService.registerProperties(getClass());
         try {
@@ -117,7 +117,7 @@ public class CoreManager implements CoreService {
     }
 
     @Deactivate
-    public void deactivate() {
+    protected void deactivate() {
         cfgService.unregisterProperties(getClass(), false);
         SharedExecutors.shutdown();
     }
@@ -171,7 +171,7 @@ public class CoreManager implements CoreService {
 
 
     @Modified
-    public void modified(ComponentContext context) {
+    protected void modified(ComponentContext context) {
         Dictionary<?, ?> properties = context.getProperties();
         Integer poolSize = Tools.getIntegerProperty(properties, "sharedThreadPoolSize");
 
@@ -183,17 +183,17 @@ public class CoreManager implements CoreService {
         }
 
         Integer timeLimit = Tools.getIntegerProperty(properties, "maxEventTimeLimit");
-        if (timeLimit != null && timeLimit > 1) {
+        if (timeLimit != null && timeLimit >= 0) {
             maxEventTimeLimit = timeLimit;
             eventDeliveryService.setDispatchTimeLimit(maxEventTimeLimit);
         } else if (timeLimit != null) {
-            log.warn("maxEventTimeLimit must be greater than 1");
+            log.warn("maxEventTimeLimit must be greater than or equal to 0");
         }
 
         Boolean performanceCheck = Tools.isPropertyEnabled(properties, "sharedThreadPerformanceCheck");
         if (performanceCheck != null) {
             calculatePoolPerformance = performanceCheck;
-            SharedExecutors.setCalculatePoolPerformance(calculatePoolPerformance, metricsService);
+            SharedExecutors.setMetricsService(calculatePoolPerformance ? metricsService : null);
         }
 
         log.info("Settings: sharedThreadPoolSize={}, maxEventTimeLimit={}, calculatePoolPerformance={}",

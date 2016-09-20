@@ -29,7 +29,3 @@
 \./providers/bmv2/
 \./drivers/bmv2/
 \./apps/kafka-integration/
-
-\./utils/atomix/pom.xml
-\./core/store/primitives/pom.xml
-\./features/features.xml

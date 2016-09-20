@@ -21,7 +21,7 @@
     <parent>
         <artifactId>onos-bmv2-providers</artifactId>
         <groupId>org.onosproject</groupId>
-        <version>1.6.0</version>
+        <version>1.7.0-rc2</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -35,7 +35,6 @@
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-core-common</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.onosproject</groupId>

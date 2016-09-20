@@ -41,7 +41,6 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-
 import org.apache.commons.pool.KeyedPoolableObjectFactory;
 import org.apache.commons.pool.impl.GenericKeyedObjectPool;
 import org.apache.felix.scr.annotations.Activate;
@@ -53,6 +52,7 @@ import org.apache.felix.scr.annotations.Service;
 import org.onlab.util.Tools;
 import org.onosproject.cluster.ClusterMetadataService;
 import org.onosproject.cluster.ControllerNode;
+import org.onosproject.core.HybridLogicalClockService;
 import org.onosproject.store.cluster.messaging.Endpoint;
 import org.onosproject.store.cluster.messaging.MessagingException;
 import org.onosproject.store.cluster.messaging.MessagingService;
@@ -82,22 +82,26 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
+import static org.onlab.util.Tools.groupedThreads;
 import static org.onosproject.security.AppGuard.checkPermission;
 import static org.onosproject.security.AppPermission.Type.CLUSTER_WRITE;
 
 /**
  * Netty based MessagingService.
  */
-@Component(immediate = true, enabled = true)
+@Component(immediate = true)
 @Service
 public class NettyMessagingManager implements MessagingService {
 
-    private static final int REPLY_TIME_OUT_SEC = 2;
+    private static final int REPLY_TIME_OUT_MILLIS = 250;
     private static final short MIN_KS_LENGTH = 6;
 
     private final Logger log = LoggerFactory.getLogger(getClass());
 
     private static final String REPLY_MESSAGE_TYPE = "NETTY_MESSAGING_REQUEST_REPLY";
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected HybridLogicalClockService clockService;
 
     private Endpoint localEp;
     private int preamble;
@@ -105,7 +109,7 @@ public class NettyMessagingManager implements MessagingService {
     private final Map<String, Consumer<InternalMessage>> handlers = new ConcurrentHashMap<>();
     private final AtomicLong messageIdGenerator = new AtomicLong(0);
     private final Cache<Long, Callback> callbacks = CacheBuilder.newBuilder()
-            .expireAfterWrite(REPLY_TIME_OUT_SEC, TimeUnit.SECONDS)
+            .expireAfterWrite(REPLY_TIME_OUT_MILLIS, TimeUnit.MILLISECONDS)
             .removalListener(new RemovalListener<Long, Callback>() {
                 @Override
                 public void onRemoval(RemovalNotification<Long, Callback> entry) {
@@ -117,7 +121,7 @@ public class NettyMessagingManager implements MessagingService {
             .build();
 
     private final GenericKeyedObjectPool<Endpoint, Connection> channels
-            = new GenericKeyedObjectPool<Endpoint, Connection>(new OnosCommunicationChannelFactory());
+            = new GenericKeyedObjectPool<>(new OnosCommunicationChannelFactory());
 
     private EventLoopGroup serverGroup;
     private EventLoopGroup clientGroup;
@@ -154,7 +158,7 @@ public class NettyMessagingManager implements MessagingService {
         initEventLoopGroup();
         startAcceptingConnections();
         started.set(true);
-        serverGroup.scheduleWithFixedDelay(callbacks::cleanUp, 0, REPLY_TIME_OUT_SEC, TimeUnit.SECONDS);
+        serverGroup.scheduleWithFixedDelay(callbacks::cleanUp, 0, REPLY_TIME_OUT_MILLIS, TimeUnit.MILLISECONDS);
         log.info("Started");
     }
 
@@ -199,8 +203,8 @@ public class NettyMessagingManager implements MessagingService {
     private void initEventLoopGroup() {
         // try Epoll first and if that does work, use nio.
         try {
-            clientGroup = new EpollEventLoopGroup();
-            serverGroup = new EpollEventLoopGroup();
+            clientGroup = new EpollEventLoopGroup(0, groupedThreads("NettyMessagingEvt", "epollC-%d", log));
+            serverGroup = new EpollEventLoopGroup(0, groupedThreads("NettyMessagingEvt", "epollS-%d", log));
             serverChannelClass = EpollServerSocketChannel.class;
             clientChannelClass = EpollSocketChannel.class;
             return;
@@ -208,8 +212,8 @@ public class NettyMessagingManager implements MessagingService {
             log.debug("Failed to initialize native (epoll) transport. "
                               + "Reason: {}. Proceeding with nio.", e.getMessage());
         }
-        clientGroup = new NioEventLoopGroup();
-        serverGroup = new NioEventLoopGroup();
+        clientGroup = new NioEventLoopGroup(0, groupedThreads("NettyMessagingEvt", "nioC-%d", log));
+        serverGroup = new NioEventLoopGroup(0, groupedThreads("NettyMessagingEvt", "nioS-%d", log));
         serverChannelClass = NioServerSocketChannel.class;
         clientChannelClass = NioSocketChannel.class;
     }
@@ -218,6 +222,7 @@ public class NettyMessagingManager implements MessagingService {
     public CompletableFuture<Void> sendAsync(Endpoint ep, String type, byte[] payload) {
         checkPermission(CLUSTER_WRITE);
         InternalMessage message = new InternalMessage(preamble,
+                                                      clockService.timeNow(),
                                                       messageIdGenerator.incrementAndGet(),
                                                       localEp,
                                                       type,
@@ -243,7 +248,9 @@ public class NettyMessagingManager implements MessagingService {
                 connection = channels.borrowObject(ep);
                 connection.send(message, future);
             } finally {
-                channels.returnObject(ep, connection);
+                if (connection != null) {
+                    channels.returnObject(ep, connection);
+                }
             }
         } catch (Exception e) {
             future.completeExceptionally(e);
@@ -264,12 +271,17 @@ public class NettyMessagingManager implements MessagingService {
         Callback callback = new Callback(response, executor);
         Long messageId = messageIdGenerator.incrementAndGet();
         callbacks.put(messageId, callback);
-        InternalMessage message = new InternalMessage(preamble, messageId, localEp, type, payload);
+        InternalMessage message = new InternalMessage(preamble,
+                                                      clockService.timeNow(),
+                                                      messageId,
+                                                      localEp,
+                                                      type,
+                                                      payload);
         return sendAsync(ep, message).whenComplete((r, e) -> {
             if (e != null) {
                 callbacks.invalidate(messageId);
             }
-        }).thenCompose(v -> response);
+        }).thenComposeAsync(v -> response, executor);
     }
 
     @Override
@@ -312,11 +324,11 @@ public class NettyMessagingManager implements MessagingService {
 
     private void startAcceptingConnections() throws InterruptedException {
         ServerBootstrap b = new ServerBootstrap();
-        b.option(ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, 32 * 1024);
-        b.option(ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, 8 * 1024);
+        b.childOption(ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, 32 * 1024);
+        b.childOption(ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, 8 * 1024);
         b.option(ChannelOption.SO_RCVBUF, 1048576);
         b.option(ChannelOption.TCP_NODELAY, true);
-        b.option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
+        b.childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
         b.group(serverGroup, clientGroup);
         b.channel(serverChannelClass);
         if (enableNettyTls) {
@@ -372,7 +384,7 @@ public class NettyMessagingManager implements MessagingService {
             }
             // Start the client.
             CompletableFuture<Channel> retFuture = new CompletableFuture<>();
-            ChannelFuture f = bootstrap.connect(ep.host().toString(), ep.port());
+            ChannelFuture f = bootstrap.connect(ep.host().toInetAddress(), ep.port());
 
             f.addListener(future -> {
                 if (future.isSuccess()) {
@@ -480,10 +492,13 @@ public class NettyMessagingManager implements MessagingService {
     }
 
     @ChannelHandler.Sharable
-    private class InboundMessageDispatcher extends SimpleChannelInboundHandler<InternalMessage> {
+    private class InboundMessageDispatcher extends SimpleChannelInboundHandler<Object> {
+     // Effectively SimpleChannelInboundHandler<InternalMessage>,
+     // had to specify <Object> to avoid Class Loader not being able to find some classes.
 
         @Override
-        protected void channelRead0(ChannelHandlerContext ctx, InternalMessage message) throws Exception {
+        protected void channelRead0(ChannelHandlerContext ctx, Object rawMessage) throws Exception {
+            InternalMessage message = (InternalMessage) rawMessage;
             try {
                 dispatchLocally(message);
             } catch (RejectedExecutionException e) {
@@ -496,12 +511,27 @@ public class NettyMessagingManager implements MessagingService {
             log.error("Exception inside channel handling pipeline.", cause);
             context.close();
         }
+
+        /**
+         * Returns true if the given message should be handled.
+         *
+         * @param msg inbound message
+         * @return true if {@code msg} is {@link InternalMessage} instance.
+         *
+         * @see SimpleChannelInboundHandler#acceptInboundMessage(Object)
+         */
+        @Override
+        public final boolean acceptInboundMessage(Object msg) {
+            return msg instanceof InternalMessage;
+        }
     }
+
     private void dispatchLocally(InternalMessage message) throws IOException {
         if (message.preamble() != preamble) {
             log.debug("Received {} with invalid preamble from {}", message.type(), message.sender());
             sendReply(message, Status.PROTOCOL_EXCEPTION, Optional.empty());
         }
+        clockService.recordEventTime(message.time());
         String type = message.type();
         if (REPLY_MESSAGE_TYPE.equals(type)) {
             try {
@@ -515,7 +545,7 @@ public class NettyMessagingManager implements MessagingService {
                     } else if (message.status() == Status.ERROR_HANDLER_EXCEPTION) {
                         callback.completeExceptionally(new MessagingException.RemoteHandlerFailure());
                     } else if (message.status() == Status.PROTOCOL_EXCEPTION) {
-                        callback.completeExceptionally(new MessagingException.ProcotolException());
+                        callback.completeExceptionally(new MessagingException.ProtocolException());
                     }
                 } else {
                     log.debug("Received a reply for message id:[{}]. "
@@ -538,6 +568,7 @@ public class NettyMessagingManager implements MessagingService {
 
     private void sendReply(InternalMessage message, Status status, Optional<byte[]> responsePayload) {
         InternalMessage response = new InternalMessage(preamble,
+                clockService.timeNow(),
                 message.id(),
                 localEp,
                 REPLY_MESSAGE_TYPE,

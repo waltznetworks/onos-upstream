@@ -15,9 +15,15 @@
  */
 package org.onosproject.vpls;
 
-import com.google.common.collect.Sets;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
+import com.google.common.collect.Lists;
+import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.onlab.packet.Ip4Address;
 import org.onlab.packet.MacAddress;
@@ -56,16 +62,14 @@ import org.onosproject.net.provider.ProviderId;
 import org.onosproject.routing.IntentSynchronizationAdminService;
 import org.onosproject.routing.IntentSynchronizationService;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
+import com.google.common.collect.Sets;
 
 import static java.lang.String.format;
-import static org.easymock.EasyMock.*;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.expect;
 import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.replay;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -132,14 +136,13 @@ public class VplsTest {
 
     private static final ProviderId PID = new ProviderId("of", "foo");
 
-    @BeforeClass
-    public static void setUpClass() {
-        IdGenerator idGenerator = new TestIdGenerator();
-        Intent.bindIdGenerator(idGenerator);
-    }
+    private static IdGenerator idGenerator;
 
     @Before
     public void setUp() throws Exception {
+        idGenerator = new TestIdGenerator();
+        Intent.bindIdGenerator(idGenerator);
+
         applicationService = createMock(ApplicationService.class);
 
         coreService = createMock(CoreService.class);
@@ -167,7 +170,12 @@ public class VplsTest {
         vpls.intentService = intentService;
         vpls.interfaceService = interfaceService;
         vpls.intentSynchronizer = intentSynchronizer;
-        vpls.intentSynchronizerAdmin = intentSynchronizer;
+
+    }
+
+    @After
+    public void tearDown() {
+        Intent.unbindIdGenerator(idGenerator);
     }
 
     /**
@@ -222,7 +230,7 @@ public class VplsTest {
     public void testActivateNoHosts() {
         vpls.activate();
 
-        List<Intent> expectedIntents = new ArrayList<>();
+        List<Intent> expectedIntents = Lists.newArrayList();
         expectedIntents.addAll(generateVlanOneBrc());
         expectedIntents.addAll(generateVlanTwoBrc());
 
@@ -255,7 +263,7 @@ public class VplsTest {
 
         vpls.activate();
 
-        List<Intent> expectedIntents = new ArrayList<>();
+        List<Intent> expectedIntents = Lists.newArrayList();
         expectedIntents.addAll(generateVlanOneBrc());
         expectedIntents.addAll(generateVlanOneUni());
         expectedIntents.addAll(generateVlanTwoBrc());
@@ -299,7 +307,7 @@ public class VplsTest {
         hostsAvailable.forEach(host ->
             hostListener.event(new HostEvent(HostEvent.Type.HOST_ADDED, host)));
 
-        List<Intent> expectedIntents = new ArrayList<>();
+        List<Intent> expectedIntents = Lists.newArrayList();
         expectedIntents.addAll(generateVlanOneBrc());
         expectedIntents.addAll(generateVlanOneUni());
         expectedIntents.addAll(generateVlanTwoBrc());
@@ -335,7 +343,7 @@ public class VplsTest {
             hostListener.event(new HostEvent(HostEvent.Type.HOST_ADDED, host));
         });
 
-        List<Intent> expectedIntents = new ArrayList<>();
+        List<Intent> expectedIntents = Lists.newArrayList();
         expectedIntents.addAll(generateVlanOneBrc());
         expectedIntents.addAll(generateVlanTwoBrc());
 
@@ -374,7 +382,7 @@ public class VplsTest {
     private List<SinglePointToMultiPointIntent> generateVlanOneBrc() {
         Key key = null;
 
-        List<SinglePointToMultiPointIntent> intents = new ArrayList<>();
+        List<SinglePointToMultiPointIntent> intents = Lists.newArrayList();
 
         // Building sp2mp intent for H1 - VLAN1
         key = Key.of((PREFIX_BROADCAST + "-" + DID1 + "-" + P1 + "-" + VLAN1),
@@ -402,7 +410,7 @@ public class VplsTest {
     private List<MultiPointToSinglePointIntent> generateVlanOneUni() {
         Key key = null;
 
-        List<MultiPointToSinglePointIntent> intents = new ArrayList<>();
+        List<MultiPointToSinglePointIntent> intents = Lists.newArrayList();
 
         // Building mp2sp intent for H1 - VLAN1
         key = Key.of((PREFIX_UNICAST + "-" + DID1 + "-" + P1 + "-" + VLAN1),
@@ -430,7 +438,7 @@ public class VplsTest {
     private List<SinglePointToMultiPointIntent> generateVlanTwoBrc() {
         Key key = null;
 
-        List<SinglePointToMultiPointIntent> intents = new ArrayList<>();
+        List<SinglePointToMultiPointIntent> intents = Lists.newArrayList();
 
         // Building sp2mp intent for H4 - VLAN2
         key = Key.of((PREFIX_BROADCAST + "-" + DID4 + "-" + P1 + "-" + VLAN2),
@@ -458,7 +466,7 @@ public class VplsTest {
     private List<MultiPointToSinglePointIntent> generateVlanTwoUni() {
         Key key = null;
 
-        List<MultiPointToSinglePointIntent> intents = new ArrayList<>();
+        List<MultiPointToSinglePointIntent> intents = Lists.newArrayList();
 
         // Building mp2sp intent for H4 - VLAN2
         key = Key.of((PREFIX_UNICAST + "-" + DID4 + "-" + P1 + "-" + VLAN2),

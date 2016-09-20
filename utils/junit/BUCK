@@ -20,6 +20,7 @@ osgi_jar(
     visibility = ['PUBLIC'],
     resources_root = 'src/main/resources',
     resources = glob(['src/main/resources/**']),
+    package_name_root = 'org.onlab',
 )
 
 java_test(
@@ -28,5 +29,4 @@ java_test(
     deps = SRC_DEPS +
            TEST_DEPS +
            [CURRENT_TARGET],
-    source_under_test = [CURRENT_TARGET],
 )

@@ -311,7 +311,6 @@ public class NiciraExtensionTreatmentInterpreter extends AbstractHandlerBehaviou
             case TUNNEL_IPV4_DST:
                 OFOxmTunnelIpv4Dst tunnelIpv4Dst = (OFOxmTunnelIpv4Dst) oxm;
                 return new NiciraSetTunnelDst(Ip4Address.valueOf(tunnelIpv4Dst.getValue().getInt()));
-
             case NSP:
                 OFOxmNsp nsp = (OFOxmNsp) oxm;
                 return new NiciraSetNshSpi(NshServicePathId.of((nsp.getValue().getRaw())));

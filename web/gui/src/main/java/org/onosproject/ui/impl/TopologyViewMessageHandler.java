@@ -88,6 +88,7 @@ import static org.onosproject.net.device.DeviceEvent.Type.PORT_STATS_UPDATED;
 import static org.onosproject.net.host.HostEvent.Type.HOST_ADDED;
 import static org.onosproject.net.link.LinkEvent.Type.LINK_ADDED;
 import static org.onosproject.ui.JsonUtils.envelope;
+import static org.onosproject.ui.JsonUtils.string;
 import static org.onosproject.ui.topo.TopoJson.highlightsMessage;
 import static org.onosproject.ui.topo.TopoJson.json;
 
@@ -100,6 +101,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private static final String REQ_DETAILS = "requestDetails";
     private static final String UPDATE_META = "updateMeta";
     private static final String ADD_HOST_INTENT = "addHostIntent";
+    private static final String REMOVE_INTENT = "removeIntent";
     private static final String ADD_MULTI_SRC_INTENT = "addMultiSourceIntent";
     private static final String REQ_RELATED_INTENTS = "requestRelatedIntents";
     private static final String REQ_NEXT_INTENT = "requestNextRelatedIntent";
@@ -148,6 +150,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private static final String NAMES = "names";
     private static final String ACTIVATE = "activate";
     private static final String DEACTIVATE = "deactivate";
+    private static final String PURGE = "purge";
 
 
     private static final String MY_APP_ID = "org.onosproject.gui";
@@ -177,7 +180,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
 
     private final Accumulator<Event> eventAccummulator = new InternalEventAccummulator();
     private final ExecutorService msgSender =
-            newSingleThreadExecutor(groupedThreads("onos/gui", "msg-sender"));
+            newSingleThreadExecutor(groupedThreads("onos/gui", "msg-sender", log));
 
     private TopoOverlayCache overlayCache;
     private TrafficMonitor traffic;
@@ -185,7 +188,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private TimerTask summaryTask = null;
     private boolean summaryRunning = false;
 
-    private boolean listenersRemoved = false;
+    private volatile boolean listenersRemoved = false;
 
 
     @Override
@@ -220,6 +223,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
                 // TODO: migrate traffic related to separate app
                 new AddHostIntent(),
                 new AddMultiSourceIntent(),
+                new RemoveIntent(),
 
                 new ReqAllFlowTraffic(),
                 new ReqAllPortTraffic(),
@@ -426,6 +430,43 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
     }
 
+    private Intent findIntentByPayload(ObjectNode payload) {
+        int appId = Integer.parseInt(string(payload, APP_ID));
+        String appName = string(payload, APP_NAME);
+        ApplicationId applicId = new DefaultApplicationId(appId, appName);
+        long intentKey = Long.decode(string(payload, KEY));
+
+        Key key = Key.of(intentKey, applicId);
+        log.debug("Attempting to select intent by key={}", key);
+
+        return intentService.getIntent(key);
+    }
+
+    private final class RemoveIntent extends RequestHandler {
+        private RemoveIntent() {
+            super(REMOVE_INTENT);
+        }
+
+        private boolean isIntentToBePurged(ObjectNode payload) {
+            return bool(payload, PURGE);
+        }
+
+        @Override
+        public void process(long sid, ObjectNode payload) {
+            Intent intent = findIntentByPayload(payload);
+            if (intent == null) {
+                log.warn("Unable to find intent from payload {}", payload);
+            } else {
+                log.debug("Withdrawing / Purging intent {}", intent.key());
+                if (isIntentToBePurged(payload)) {
+                    intentService.purge(intent);
+                } else {
+                    intentService.withdraw(intent);
+                }
+            }
+        }
+    }
+
     private final class AddMultiSourceIntent extends RequestHandler {
         private AddMultiSourceIntent() {
             super(ADD_MULTI_SRC_INTENT);
@@ -551,19 +592,11 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
 
         @Override
         public void process(long sid, ObjectNode payload) {
-            int appId = Integer.parseInt(string(payload, APP_ID));
-            String appName = string(payload, APP_NAME);
-            ApplicationId applicId = new DefaultApplicationId(appId, appName);
-            long intentKey = Long.decode(string(payload, KEY));
-
-            Key key = Key.of(intentKey, applicId);
-            log.debug("Attempting to select intent key={}", key);
-
-            Intent intent = intentService.getIntent(key);
+            Intent intent = findIntentByPayload(payload);
             if (intent == null) {
-                log.debug("no such intent found!");
+                log.warn("Unable to find intent from payload {}", payload);
             } else {
-                log.debug("starting to monitor intent {}", key);
+                log.debug("starting to monitor intent {}", intent.key());
                 traffic.monitor(intent);
             }
         }

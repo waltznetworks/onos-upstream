@@ -30,11 +30,13 @@ import org.onosproject.segmentrouting.config.DeviceConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static java.util.concurrent.Executors.newScheduledThreadPool;
+import static org.onlab.util.Tools.groupedThreads;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
@@ -58,8 +60,8 @@ public class DefaultRoutingHandler {
     private DeviceConfiguration config;
     private final Lock statusLock = new ReentrantLock();
     private volatile Status populationStatus;
-    private boolean linkHasWeight;
-    private ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
+    private ScheduledExecutorService executorService
+        = newScheduledThreadPool(1, groupedThreads("RoutingHandler", "retry-%d", log));
 
     /**
      * Represents the default routing population status.
@@ -90,7 +92,6 @@ public class DefaultRoutingHandler {
         this.config = checkNotNull(srManager.deviceConfiguration);
         this.populationStatus = Status.IDLE;
         this.currentEcmpSpgMap = Maps.newHashMap();
-        this.linkHasWeight = false;
     }
 
     /**
@@ -109,14 +110,13 @@ public class DefaultRoutingHandler {
             log.debug("populateAllRoutingRules: populationStatus is STARTED");
 
             for (Device sw : srManager.deviceService.getDevices()) {
-                log.debug("DEVICE -- {}", sw.id());
                 if (!srManager.mastershipService.isLocalMaster(sw.id())) {
                     log.debug("populateAllRoutingRules: skipping device {}...we are not master",
                               sw.id());
                     continue;
                 }
 
-                EcmpShortestPathGraph ecmpSpg = new EcmpShortestPathGraph(sw.id(), srManager, linkHasWeight);
+                EcmpShortestPathGraph ecmpSpg = new EcmpShortestPathGraph(sw.id(), srManager);
                 if (!populateEcmpRoutingRules(sw.id(), ecmpSpg, ImmutableSet.of())) {
                     log.debug("populateAllRoutingRules: populationStatus is ABORTED");
                     populationStatus = Status.ABORTED;
@@ -135,7 +135,6 @@ public class DefaultRoutingHandler {
             return true;
         } finally {
             statusLock.unlock();
-            return false;
         }
     }
 
@@ -164,7 +163,7 @@ public class DefaultRoutingHandler {
                     continue;
                 }
                 EcmpShortestPathGraph ecmpSpgUpdated =
-                        new EcmpShortestPathGraph(sw.id(), srManager, linkHasWeight);
+                        new EcmpShortestPathGraph(sw.id(), srManager);
                 updatedEcmpSpgMap.put(sw.id(), ecmpSpgUpdated);
             }
 
@@ -220,7 +219,7 @@ public class DefaultRoutingHandler {
             // When only the source device is defined, reinstall routes to all other devices
             if (link.size() == 1) {
                 log.trace("repopulateRoutingRulesForRoutes: running ECMP graph for device {}", link.get(0));
-                EcmpShortestPathGraph ecmpSpg = new EcmpShortestPathGraph(link.get(0), srManager, linkHasWeight);
+                EcmpShortestPathGraph ecmpSpg = new EcmpShortestPathGraph(link.get(0), srManager);
                 if (populateEcmpRoutingRules(link.get(0), ecmpSpg, ImmutableSet.of())) {
                     log.debug("Populating flow rules from all to dest:{} is successful",
                               link.get(0));

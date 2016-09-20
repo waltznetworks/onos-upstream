@@ -13,13 +13,15 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
-  --><project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos</artifactId>
-        <version>1.6.0</version>
+        <version>1.7.0-rc2</version>
     </parent>
 
     <artifactId>onos-apps</artifactId>
@@ -34,6 +36,7 @@
         <module>mobility</module>
         <module>proxyarp</module>
         <module>sdnip</module>
+        <module>optical-model</module>
         <module>optical</module>
         <module>newoptical</module>
         <module>metrics</module>
@@ -42,10 +45,8 @@
         <module>reactive-routing</module>
         <module>virtualbng</module>
         <module>bgprouter</module>
-        <module>bgpflowspec</module>
         <module>test</module>
         <module>segmentrouting</module>
-        <module>xos-integration</module>
         <module>kafka-integration</module>
         <module>pcep-api</module>
         <module>iptopology-api</module>
@@ -54,10 +55,12 @@
         <module>flowanalyzer</module>
         <module>vtn</module>
         <module>dhcp</module>
+        <module>dhcprelay</module>
         <module>mfwd</module>
         <module>pim</module>
         <module>mlb</module>
         <module>pathpainter</module>
+        <module>patchpanel</module>
         <module>drivermatrix</module>
         <module>cpman</module>
         <module>events</module>
@@ -72,6 +75,8 @@
         <module>xosclient</module>
         <module>scalablegateway</module>
         <module>bmv2-demo</module>
+        <module>yms</module>
+        <module>rabbitmq</module>
     </modules>
 
 
@@ -88,7 +93,6 @@
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onlab-osgi</artifactId>
-            <version>${project.version}</version>
         </dependency>
 
         <dependency>

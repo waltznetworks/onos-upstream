@@ -18,7 +18,7 @@
   <parent>
     <groupId>org.onosproject</groupId>
     <artifactId>onos-providers</artifactId>
-    <version>1.6.0</version>
+    <version>1.7.0-rc2</version>
   </parent>
 
   <artifactId>onos-bgpcep-providers</artifactId>
@@ -32,24 +32,13 @@
   </modules>
 
   <dependencies>
-      <dependency>
-          <groupId>org.onosproject</groupId>
-          <artifactId>onos-app-bgp-flowapi</artifactId>
-          <version>${project.version}</version>
-      </dependency>
-        <dependency>
-            <groupId>org.onosproject</groupId>
-            <artifactId>onos-bgp-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-      <dependency>
-          <groupId>org.onosproject</groupId>
-          <artifactId>onos-bgpio</artifactId>
-      </dependency>
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-pcep-controller-api</artifactId>
-            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.onosproject</groupId>
+            <artifactId>onos-bgp-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.onosproject</groupId>
@@ -59,23 +48,6 @@
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-pcepio</artifactId>
-            <version>${project.version}</version>
-        </dependency>      
-        <dependency>
-            <groupId>org.onosproject</groupId>
-            <artifactId>onos-api</artifactId>
-            <classifier>tests</classifier>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty</artifactId>
-        </dependency>
-
-       <dependency>
-            <groupId>org.onosproject</groupId>
-            <artifactId>onlab-junit</artifactId>
         </dependency>
   </dependencies>
 

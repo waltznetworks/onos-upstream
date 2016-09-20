@@ -39,6 +39,7 @@ import org.onosproject.net.DefaultEdgeLink;
 import org.onosproject.net.Device;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.EdgeLink;
+import org.onosproject.net.ElementId;
 import org.onosproject.net.Host;
 import org.onosproject.net.HostId;
 import org.onosproject.net.HostLocation;
@@ -76,6 +77,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -91,6 +93,8 @@ import static org.onosproject.ui.topo.TopoUtils.compactLinkString;
  * Facility for creating messages bound for the topology viewer.
  */
 public abstract class TopologyViewMessageHandlerBase extends UiMessageHandler {
+
+    private static final String NO_GEO_VALUE = "0.0";
 
     // default to an "add" event...
     private static final DefaultHashMap<ClusterEvent.Type, String> CLUSTER_EVENT =
@@ -359,10 +363,10 @@ public abstract class TopologyViewMessageHandlerBase extends UiMessageHandler {
 
         String slng = annotations.value(AnnotationKeys.LONGITUDE);
         String slat = annotations.value(AnnotationKeys.LATITUDE);
-        boolean haveLng = slng != null && !slng.isEmpty();
-        boolean haveLat = slat != null && !slat.isEmpty();
-        try {
-            if (haveLng && haveLat) {
+        boolean validLng = slng != null && !slng.equals(NO_GEO_VALUE);
+        boolean validLat = slat != null && !slat.equals(NO_GEO_VALUE);
+        if (validLat && validLng) {
+            try {
                 double lng = Double.parseDouble(slng);
                 double lat = Double.parseDouble(slat);
                 ObjectNode loc = objectNode()
@@ -370,11 +374,9 @@ public abstract class TopologyViewMessageHandlerBase extends UiMessageHandler {
                         .put("lng", lng)
                         .put("lat", lat);
                 payload.set("location", loc);
-            } else {
-                log.trace("missing Lng/Lat: lng={}, lat={}", slng, slat);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid geo data: longitude={}, latitude={}", slng, slat);
             }
-        } catch (NumberFormatException e) {
-            log.warn("Invalid geo data: longitude={}, latitude={}", slng, slat);
         }
     }
 
@@ -395,7 +397,7 @@ public abstract class TopologyViewMessageHandlerBase extends UiMessageHandler {
         return new PropertyPanel("ONOS Summary", "node")
             .addProp(Properties.VERSION, version)
             .addSeparator()
-            .addProp(Properties.DEVICES,  deviceService.getDeviceCount())
+            .addProp(Properties.DEVICES, deviceService.getDeviceCount())
             .addProp(Properties.LINKS, topology.linkCount())
             .addProp(Properties.HOSTS, hostService.getHostCount())
             .addProp(Properties.TOPOLOGY_SSCS, topology.clusterCount())
@@ -457,12 +459,20 @@ public abstract class TopologyViewMessageHandlerBase extends UiMessageHandler {
         int count = 0;
         Collection<Tunnel> tunnels = tunnelService.queryAllTunnels();
         for (Tunnel tunnel : tunnels) {
-            OpticalTunnelEndPoint src = (OpticalTunnelEndPoint) tunnel.src();
-            OpticalTunnelEndPoint dst = (OpticalTunnelEndPoint) tunnel.dst();
-            DeviceId srcDevice = (DeviceId) src.elementId().get();
-            DeviceId dstDevice = (DeviceId) dst.elementId().get();
-            if (srcDevice.toString().equals(deviceId.toString()) ||
-                dstDevice.toString().equals(deviceId.toString())) {
+            //Only OpticalTunnelEndPoint has a device
+            if (!(tunnel.src() instanceof OpticalTunnelEndPoint) ||
+                    !(tunnel.dst() instanceof OpticalTunnelEndPoint)) {
+                continue;
+            }
+
+            Optional<ElementId> srcElementId = ((OpticalTunnelEndPoint) tunnel.src()).elementId();
+            Optional<ElementId> dstElementId = ((OpticalTunnelEndPoint) tunnel.dst()).elementId();
+            if (!srcElementId.isPresent() || !dstElementId.isPresent()) {
+                continue;
+            }
+            DeviceId srcDeviceId = (DeviceId) srcElementId.get();
+            DeviceId dstDeviceId = (DeviceId) dstElementId.get();
+            if (srcDeviceId.equals(deviceId) || dstDeviceId.equals(deviceId)) {
                 count++;
             }
         }

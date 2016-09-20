@@ -87,6 +87,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Verify.verify;
@@ -231,7 +232,6 @@ public class ECDeviceStore
         availableDevices = storageService.<DeviceId>setBuilder()
                 .withName("onos-online-devices")
                 .withSerializer(Serializer.using(KryoNamespaces.API))
-                .withPartitionsDisabled()
                 .withRelaxedReadConsistency()
                 .build()
                 .asDistributedSet();
@@ -275,6 +275,7 @@ public class ECDeviceStore
         return devices.get(deviceId);
     }
 
+    // FIXME handle deviceDescription.isDefaultAvailable()=false case properly.
     @Override
     public DeviceEvent createOrUpdateDevice(ProviderId providerId,
             DeviceId deviceId,
@@ -392,8 +393,13 @@ public class ECDeviceStore
         return null;
     }
 
-    private boolean markOnline(DeviceId deviceId) {
-        return availableDevices.add(deviceId);
+    // FIXME publicization of markOnline -- trigger some action independently?
+    public boolean markOnline(DeviceId deviceId) {
+        if (devices.containsKey(deviceId)) {
+            return availableDevices.add(deviceId);
+        }
+        log.warn("Device {} does not exist in store", deviceId);
+        return false;
     }
 
     @Override
@@ -575,8 +581,24 @@ public class ECDeviceStore
     }
 
     @Override
+    public Stream<PortDescription> getPortDescriptions(ProviderId pid,
+                                                       DeviceId deviceId) {
+
+        return portDescriptions.entrySet().stream()
+                .filter(e -> e.getKey().providerId().equals(pid))
+                .map(Map.Entry::getValue);
+    }
+
+    @Override
     public Port getPort(DeviceId deviceId, PortNumber portNumber) {
         return devicePorts.getOrDefault(deviceId, Maps.newHashMap()).get(portNumber);
+    }
+
+    @Override
+    public PortDescription getPortDescription(ProviderId pid,
+                                              DeviceId deviceId,
+                                              PortNumber portNumber) {
+        return portDescriptions.get(new PortKey(pid, deviceId, portNumber));
     }
 
     @Override
@@ -657,12 +679,32 @@ public class ECDeviceStore
     }
 
     @Override
+    public PortStatistics getStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        Map<PortNumber, PortStatistics> portStatsMap = devicePortStats.get(deviceId);
+        if (portStatsMap == null) {
+            return null;
+        }
+        PortStatistics portStats = portStatsMap.get(portNumber);
+        return portStats;
+    }
+
+    @Override
     public List<PortStatistics> getPortDeltaStatistics(DeviceId deviceId) {
         Map<PortNumber, PortStatistics> portStats = devicePortDeltaStats.get(deviceId);
         if (portStats == null) {
             return Collections.emptyList();
         }
         return ImmutableList.copyOf(portStats.values());
+    }
+
+    @Override
+    public PortStatistics getDeltaStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        Map<PortNumber, PortStatistics> portStatsMap = devicePortDeltaStats.get(deviceId);
+        if (portStatsMap == null) {
+            return null;
+        }
+        PortStatistics portStats = portStatsMap.get(portNumber);
+        return portStats;
     }
 
     @Override
@@ -802,7 +844,7 @@ public class ECDeviceStore
             if (event.type() == PUT) {
                 Device device = devices.get(event.key());
                 if (device != null) {
-                    delegate.notify(new DeviceEvent(PORT_STATS_UPDATED, device));
+                    notifyDelegate(new DeviceEvent(PORT_STATS_UPDATED, device));
                 }
             }
         }

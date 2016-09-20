@@ -74,7 +74,6 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.Futures;
 
-import static com.google.common.base.Preconditions.checkNotNull;
 import static org.onosproject.net.DefaultAnnotations.merge;
 import static org.onosproject.net.DefaultAnnotations.union;
 import static org.onosproject.net.Link.State.ACTIVE;
@@ -93,7 +92,7 @@ import static org.slf4j.LoggerFactory.getLogger;
 /**
  * Manages the inventory of links using a {@code EventuallyConsistentMap}.
  */
-@Component(immediate = true, enabled = true)
+@Component(immediate = true)
 @Service
 public class ECLinkStore
         extends AbstractStore<LinkEvent, LinkStoreDelegate>
@@ -317,6 +316,9 @@ public class ECLinkStore
         AtomicReference<LinkEvent.Type> eventType = new AtomicReference<>();
         Link link = links.compute(linkKey, (key, existingLink) -> {
             Link newLink = composeLink(linkKey);
+            if (newLink == null) {
+                return null;
+            }
             if (existingLink == null) {
                 eventType.set(LINK_ADDED);
                 return newLink;
@@ -350,9 +352,17 @@ public class ECLinkStore
 
     private Link composeLink(LinkKey linkKey) {
 
-        ProviderId baseProviderId = checkNotNull(getBaseProviderId(linkKey));
+        ProviderId baseProviderId = getBaseProviderId(linkKey);
+        if (baseProviderId == null) {
+            // provider was not found, this means it was already removed by the
+            // parent component.
+            return null;
+        }
         LinkDescription base = linkDescriptions.get(new Provided<>(linkKey, baseProviderId));
-
+        // short circuit if link description no longer exists
+        if (base == null) {
+            return null;
+        }
         ConnectPoint src = base.src();
         ConnectPoint dst = base.dst();
         Type type = base.type();
