@@ -21,8 +21,6 @@ import org.onosproject.net.DeviceId;
 
 import java.util.List;
 
-import com.google.common.collect.ImmutableList;
-
 /**
  * Testing version of implementation on FlowObjectiveService.
  */
