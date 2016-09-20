@@ -58,7 +58,7 @@ public interface DeviceProvider extends Provider {
      */
     boolean isReachable(DeviceId deviceId);
 
-    /*
+    /**
      * Administratively enables or disables a port.
      *
      * @param deviceId device identifier

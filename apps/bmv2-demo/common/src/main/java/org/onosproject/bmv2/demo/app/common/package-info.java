@@ -15,6 +15,6 @@
  */
 
 /**
- * BGP web that used rest to create BGP resources.
+ * Bmv2 demo app common classes.
  */
-package org.onosproject.bgpweb.resources;
+package org.onosproject.bmv2.demo.app.common;

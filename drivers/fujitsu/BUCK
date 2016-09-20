@@ -18,11 +18,6 @@ BUNDLES = [
     '//drivers/utilities:onos-drivers-utilities',
 ]
 
-TEST_DEPS = [
-    '//lib:TEST_ADAPTERS',
-    '//core/api:onos-api-tests',
-]
-
 osgi_jar_with_tests (
     deps = COMPILE_DEPS,
     test_deps = TEST_DEPS,

@@ -86,7 +86,6 @@ public class IntentCleanup implements Runnable, IntentListener {
     private ExecutorService executor;
     private Timer timer;
     private TimerTask timerTask;
-    private int cleanupIteration = 0;
 
     @Activate
     public void activate() {
@@ -189,11 +188,6 @@ public class IntentCleanup implements Runnable, IntentListener {
     }
 
     private void resubmitPendingRequest(IntentData intentData) {
-        if (cleanupIteration % (intentData.errorCount() + 1) != 0) {
-            // backoff
-            return;
-        }
-
         switch (intentData.request()) {
             case INSTALL_REQ:
                 service.submit(intentData.intent());
@@ -216,8 +210,6 @@ public class IntentCleanup implements Runnable, IntentListener {
      * re-submit/withdraw appropriately.
      */
     private void cleanup() {
-        cleanupIteration++;
-
         int corruptCount = 0, failedCount = 0, stuckCount = 0, pendingCount = 0;
 
         for (IntentData intentData : store.getIntentData(true, periodMs)) {

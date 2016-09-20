@@ -285,8 +285,6 @@ public final class DefaultForwardingObjective implements ForwardingObjective {
             checkArgument(priority <= MAX_PRIORITY && priority >= MIN_PRIORITY, "Priority " +
                     "out of range");
             op = Operation.ADD;
-            checkArgument(priority <= MAX_PRIORITY && priority >= MIN_PRIORITY, "Priority " +
-                    "out of range");
             return new DefaultForwardingObjective(this);
         }
 

@@ -283,6 +283,7 @@ public class DeviceManager
         }
     }
 
+    @Override
     public void changePortState(DeviceId deviceId, PortNumber portNumber,
                                 boolean enable) {
         checkNotNull(deviceId, DEVICE_ID_NULL);

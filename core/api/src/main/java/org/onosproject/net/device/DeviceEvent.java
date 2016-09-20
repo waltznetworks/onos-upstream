@@ -20,10 +20,7 @@ import org.onosproject.event.AbstractEvent;
 import org.onosproject.net.Device;
 import org.onosproject.net.Port;
 
-import java.util.Optional;
-
 import static com.google.common.base.MoreObjects.toStringHelper;
-import static org.onosproject.net.device.DeviceEvent.Type.DEVICE_AVAILABILITY_CHANGED;
 
 /**
  * Describes infrastructure device event.
@@ -31,7 +28,6 @@ import static org.onosproject.net.device.DeviceEvent.Type.DEVICE_AVAILABILITY_CH
 public class DeviceEvent extends AbstractEvent<DeviceEvent.Type, Device> {
 
     private final Port port;
-    private final boolean isAvailable;
 
     /**
      * Type of device events.
@@ -106,20 +102,6 @@ public class DeviceEvent extends AbstractEvent<DeviceEvent.Type, Device> {
     public DeviceEvent(Type type, Device device, Port port) {
         super(type, device);
         this.port = port;
-        this.isAvailable = false;
-    }
-
-    /**
-     * Creates an event for change of device availability for the given device
-     * and the current time.
-     *
-     * @param device      event device subject
-     * @param isAvailable true if device became available; false otherwise
-     */
-    public DeviceEvent(Device device, boolean isAvailable) {
-        super(DEVICE_AVAILABILITY_CHANGED, device);
-        this.port = null;
-        this.isAvailable = isAvailable;
     }
 
     /**
@@ -133,7 +115,6 @@ public class DeviceEvent extends AbstractEvent<DeviceEvent.Type, Device> {
     public DeviceEvent(Type type, Device device, Port port, long time) {
         super(type, device, time);
         this.port = port;
-        this.isAvailable = false;
     }
 
     /**
@@ -143,15 +124,6 @@ public class DeviceEvent extends AbstractEvent<DeviceEvent.Type, Device> {
      */
     public Port port() {
         return port;
-    }
-
-    /**
-     * Indicates whether device became available or unavailable.
-     *
-     * @return if present, true indicates device came online; false if device went offline
-     */
-    public Optional<Boolean> isAvailable() {
-        return type() == DEVICE_AVAILABILITY_CHANGED ? Optional.of(isAvailable) : Optional.empty();
     }
 
     @Override
@@ -165,5 +137,5 @@ public class DeviceEvent extends AbstractEvent<DeviceEvent.Type, Device> {
                 .add("subject", subject())
                 .add("port", port)
                 .toString();
-    }
+     }
 }

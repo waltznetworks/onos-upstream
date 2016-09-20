@@ -15,6 +15,6 @@
  */
 
 /**
- * Bgp service manager for interacting with bgp provider.
+ * BMv2 protocol API.
  */
-package org.onosproject.flow.forwarder.impl;
+package org.onosproject.bmv2.api;

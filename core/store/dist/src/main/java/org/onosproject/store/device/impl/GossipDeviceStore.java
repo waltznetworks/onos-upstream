@@ -477,7 +477,7 @@ public class GossipDeviceStore
             boolean wasOnline = availableDevices.contains(newDevice.id());
             markOnline(newDevice.id(), newTimestamp);
             if (!wasOnline) {
-                notifyDelegateIfNotNull(new DeviceEvent(newDevice, true));
+                notifyDelegateIfNotNull(new DeviceEvent(DEVICE_AVAILABILITY_CHANGED, newDevice, null));
             }
         }
         return event;
@@ -534,7 +534,7 @@ public class GossipDeviceStore
             }
             boolean removed = availableDevices.remove(deviceId);
             if (removed) {
-                return new DeviceEvent(device, false);
+                return new DeviceEvent(DEVICE_AVAILABILITY_CHANGED, device, null);
             }
             return null;
         }
