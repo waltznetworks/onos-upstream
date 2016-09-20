@@ -457,11 +457,22 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
                 DefaultTrafficSelector.builder();
         int forTableId = -1;
         if (ethType.ethType().toShort() == Ethernet.TYPE_IPV4) {
+            IPCriterion destinationCriterion = (IPCriterion) selector.getCriterion(Criterion.Type.IPV4_DST);
+            IPCriterion sourceCriterion = (IPCriterion) selector.getCriterion(Criterion.Type.IPV4_SRC);
+            PortCriterion inPortCriterion = (PortCriterion) selector.getCriterion(Criterion.Type.IN_PORT);
+
             filteredSelectorBuilder = filteredSelectorBuilder
                 .matchEthType(Ethernet.TYPE_IPV4)
-                .matchIPDst(((IPCriterion) selector
-                        .getCriterion(Criterion.Type.IPV4_DST))
-                        .ip());
+                .matchIPDst(destinationCriterion.ip());
+
+            if (sourceCriterion != null) {
+                filteredSelectorBuilder = filteredSelectorBuilder.matchIPSrc(sourceCriterion.ip());
+            }
+
+            if (inPortCriterion != null) {
+                filteredSelectorBuilder = filteredSelectorBuilder.matchInPort(inPortCriterion.port());
+            }
+
             forTableId = ipv4UnicastTableId;
             log.debug("processing IPv4 specific forwarding objective");
         } else {
