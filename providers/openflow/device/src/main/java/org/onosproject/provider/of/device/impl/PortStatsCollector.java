@@ -102,7 +102,7 @@ public class PortStatsCollector implements TimerTask {
     public synchronized void start() {
         log.info("Starting Port Stats collection thread for {}", sw.getStringId());
         stopped = false;
-        timeout = timer.newTimeout(this, 1, TimeUnit.MILLISECONDS);
+        timeout = timer.newTimeout(this, 1, TimeUnit.SECONDS);
     }
 
     /**
