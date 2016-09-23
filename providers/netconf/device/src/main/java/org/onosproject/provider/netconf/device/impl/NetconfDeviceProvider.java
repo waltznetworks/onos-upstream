@@ -156,7 +156,7 @@ public class NetconfDeviceProvider extends AbstractProvider
     private ApplicationId appId;
     private boolean active;
 
-    private static final int POLL_PERIOD = 1_000; // milliseconds
+    private static final int POLLING_INTERVAL = 5500; // milliseconds
     private final ScheduledExecutorService scheduledExecutorService = SharedScheduledExecutors.getPoolThreadExecutor();
     private ScheduledFuture<?> poller;
 
@@ -173,8 +173,9 @@ public class NetconfDeviceProvider extends AbstractProvider
         executor.execute(NetconfDeviceProvider.this::connectDevices);
         localNodeId = clusterService.getLocalNode().id();
         scheduledTask = schedulePolling();
-        /* Poll devices every 1000 milliseconds */
-        poller = scheduledExecutorService.scheduleAtFixedRate(this::pollDevices, 1_000, POLL_PERIOD, TimeUnit.MILLISECONDS);
+        /* Poll devices every 5500 milliseconds */
+        poller = scheduledExecutorService.scheduleAtFixedRate(this::pollDevices, POLLING_INTERVAL,
+                POLLING_INTERVAL, TimeUnit.MILLISECONDS);
         log.info("Started");
     }
 
