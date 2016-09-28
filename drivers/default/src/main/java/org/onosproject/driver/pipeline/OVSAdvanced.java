@@ -162,8 +162,13 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
         if (filteringObjective.type() == FilteringObjective.Type.PERMIT) {
             log.debug("processing PERMIT filter objective");
             processFilter(filteringObjective,
-                          filteringObjective.op() == Objective.Operation.ADD,
-                          filteringObjective.appId());
+                    filteringObjective.op() == Objective.Operation.ADD,
+                    filteringObjective.appId(), false);
+        } else if (filteringObjective.type() == FilteringObjective.Type.DENY) {
+                log.debug("processing PERMIT filter objective");
+                processFilter(filteringObjective,
+                        filteringObjective.op() == Objective.Operation.ADD,
+                        filteringObjective.appId(), true);
         } else {
             log.debug("filter objective other than PERMIT not supported");
             fail(filteringObjective, ObjectiveError.UNSUPPORTED);
@@ -535,8 +540,8 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
     }
 
     protected List<FlowRule> processEthDstFilter(Criterion c,
-                                       FilteringObjective filt,
-                                       ApplicationId applicationId) {
+                                                 FilteringObjective filt,
+                                                 ApplicationId applicationId, boolean drop) {
         List<FlowRule> rules = new ArrayList<FlowRule>();
         EthCriterion e = (EthCriterion) c;
         TrafficSelector.Builder selectorIp = DefaultTrafficSelector
@@ -546,9 +551,14 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
         selectorIp.matchEthDst(e.mac());
         selectorIp.matchEthType(Ethernet.TYPE_IPV4);
         treatmentIp.transition(ipv4UnicastTableId);
-        FlowRule ruleIp = DefaultFlowRule.builder().forDevice(deviceId)
-                .withSelector(selectorIp.build())
-                .withTreatment(treatmentIp.build())
+
+        FlowRule.Builder builder = DefaultFlowRule.builder().forDevice(deviceId)
+                .withSelector(selectorIp.build());
+        if (!drop) {
+            builder = builder.withTreatment(treatmentIp.build());
+        }
+
+        FlowRule ruleIp = builder
                 .withPriority(filt.priority()).fromApp(applicationId)
                 .makePermanent().forTable(tmacTableId).build();
         log.debug("adding IP ETH rule for MAC: {}", e.mac());
@@ -561,9 +571,13 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
         selectorMpls.matchEthDst(e.mac());
         selectorMpls.matchEthType(Ethernet.MPLS_UNICAST);
         treatmentMpls.transition(mplsTableId);
-        FlowRule ruleMpls = DefaultFlowRule.builder()
-                .forDevice(deviceId).withSelector(selectorMpls.build())
-                .withTreatment(treatmentMpls.build())
+        FlowRule.Builder mplsBuilder = DefaultFlowRule.builder()
+                .forDevice(deviceId).withSelector(selectorMpls.build());
+        if (!drop) {
+            mplsBuilder = mplsBuilder.withTreatment(treatmentMpls.build());
+        }
+
+        FlowRule ruleMpls = mplsBuilder
                 .withPriority(filt.priority()).fromApp(applicationId)
                 .makePermanent().forTable(tmacTableId).build();
         log.debug("adding MPLS ETH rule for MAC: {}", e.mac());
@@ -574,7 +588,7 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
 
     protected List<FlowRule> processVlanIdFilter(Criterion c,
                                                  FilteringObjective filt,
-                                                 ApplicationId applicationId) {
+                                                 ApplicationId applicationId, boolean drop) {
         List<FlowRule> rules = new ArrayList<FlowRule>();
         VlanIdCriterion v = (VlanIdCriterion) c;
         log.debug("adding rule for VLAN: {}", v.vlanId());
@@ -589,9 +603,13 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
             treatment.deferred().popVlan();
         }
         treatment.transition(tmacTableId);
-        FlowRule rule = DefaultFlowRule.builder().forDevice(deviceId)
-                .withSelector(selector.build())
-                .withTreatment(treatment.build())
+        FlowRule.Builder builder = DefaultFlowRule.builder().forDevice(deviceId)
+                .withSelector(selector.build());
+        if (!drop) {
+            builder = builder.withTreatment(treatment.build());
+        }
+
+        FlowRule rule = builder
                 .withPriority(filt.priority()).fromApp(applicationId)
                 .makePermanent().forTable(vlanTableId).build();
         rules.add(rule);
@@ -600,7 +618,7 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
     }
 
     private void processFilter(FilteringObjective filt, boolean install,
-                               ApplicationId applicationId) {
+                               ApplicationId applicationId, boolean drop) {
         // This driver only processes filtering criteria defined with switch
         // ports as the key
         if (filt.key().equals(Criteria.dummy())
@@ -616,13 +634,13 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
             if (c.type() == Criterion.Type.ETH_DST) {
                 for (FlowRule rule : processEthDstFilter(c,
                                                          filt,
-                                                         applicationId)) {
+                                                         applicationId, drop)) {
                     ops = install ? ops.add(rule) : ops.remove(rule);
                 }
             } else if (c.type() == Criterion.Type.VLAN_VID) {
                 for (FlowRule rule : processVlanIdFilter(c,
                                                          filt,
-                                                         applicationId)) {
+                                                         applicationId, drop)) {
                     ops = install ? ops.add(rule) : ops.remove(rule);
                 }
             } else if (c.type() == Criterion.Type.IPV4_DST) {
@@ -634,11 +652,14 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
                         .builder();
                 selector.matchEthType(Ethernet.TYPE_IPV4);
                 selector.matchIPDst(ip.ip());
-                FlowRule rule = DefaultFlowRule.builder().forDevice(deviceId)
+                FlowRule.Builder builder = DefaultFlowRule.builder().forDevice(deviceId)
                         .withSelector(selector.build())
-                        .withTreatment(treatment.build())
                         .withPriority(filt.priority()).fromApp(applicationId)
-                        .makePermanent().forTable(ipv4UnicastTableId).build();
+                        .makePermanent().forTable(ipv4UnicastTableId);
+                if(!drop) {
+                    builder = builder.withTreatment(treatment.build());
+                }
+                FlowRule rule = builder.build();
                 ops = install ? ops.add(rule) : ops.remove(rule);
             } else {
                 log.warn("Driver does not currently process filtering condition"
