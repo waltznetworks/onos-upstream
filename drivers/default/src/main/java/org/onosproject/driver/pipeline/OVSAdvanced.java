@@ -418,8 +418,8 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
                 treatmentBuilder.deferred().group(group.id());
                 log.debug("Adding OUTGROUP action");
             }
-        } else {
-            log.warn("VERSATILE forwarding objective need next objective ID.");
+        } else if (fwd.treatment() == null) {
+            log.warn("VERSATILE forwarding objective need next objective ID or treatment.");
             return Collections.emptySet();
         }
 
