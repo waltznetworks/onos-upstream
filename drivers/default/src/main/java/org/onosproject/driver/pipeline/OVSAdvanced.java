@@ -656,7 +656,7 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
                         .withSelector(selector.build())
                         .withPriority(filt.priority()).fromApp(applicationId)
                         .makePermanent().forTable(ipv4UnicastTableId);
-                if(!drop) {
+                if (!drop) {
                     builder = builder.withTreatment(treatment.build());
                 }
                 FlowRule rule = builder.build();
