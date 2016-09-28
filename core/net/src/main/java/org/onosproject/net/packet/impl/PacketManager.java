@@ -17,13 +17,16 @@ package org.onosproject.net.packet.impl;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
+import org.apache.felix.scr.annotations.Modified;
+import org.apache.felix.scr.annotations.Property;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
+import org.onosproject.cfg.ComponentConfigService;
+import org.onosproject.cfg.ConfigProperty;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.core.ApplicationId;
@@ -62,13 +65,16 @@ import org.slf4j.Logger;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.onlab.util.Tools.groupedThreads;
 import static org.onosproject.security.AppGuard.checkPermission;
-import static org.onosproject.security.AppPermission.Type.*;
+import static org.onosproject.security.AppPermission.Type.PACKET_EVENT;
+import static org.onosproject.security.AppPermission.Type.PACKET_READ;
+import static org.onosproject.security.AppPermission.Type.PACKET_WRITE;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
@@ -106,6 +112,14 @@ public class PacketManager
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     private FlowObjectiveService objectiveService;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected ComponentConfigService cfgService;
+
+    private static final boolean DEFAULT_REQUEST_INTERCEPTS_ENABLED = false;
+    @Property(name = "requestInterceptsEnabled", boolValue = DEFAULT_REQUEST_INTERCEPTS_ENABLED,
+            label = "Enable requesting packet intercepts")
+    private boolean requestInterceptsEnabled;
+
     private ExecutorService eventHandlingExecutor;
 
     private final DeviceListener deviceListener = new InternalDeviceListener();
@@ -123,6 +137,8 @@ public class PacketManager
                 groupedThreads("onos/net/packet", "event-handler", log));
         localNodeId = clusterService.getLocalNode().id();
         appId = coreService.getAppId(CoreService.CORE_APP_NAME);
+        cfgService.registerProperties(getClass());
+        modified();
         store.setDelegate(delegate);
         deviceService.addListener(deviceListener);
         store.existingRequests().forEach(this::pushToAllDevices);
@@ -130,11 +146,22 @@ public class PacketManager
         log.info("Started");
     }
 
+    @Modified
+    public void modified() {
+        Set<ConfigProperty> configProperties = cfgService.getProperties(getClass().getCanonicalName());
+        for (ConfigProperty property : configProperties) {
+            if (property.name().equals("requestInterceptsEnabled")) {
+                requestInterceptsEnabled = property.asBoolean();
+            }
+        }
+    }
+
     @Deactivate
     public void deactivate() {
         store.unsetDelegate(delegate);
         deviceService.removeListener(deviceListener);
         eventHandlingExecutor.shutdown();
+        cfgService.unregisterProperties(getClass(), false);
         log.info("Stopped");
     }
 
@@ -182,54 +209,69 @@ public class PacketManager
     @Override
     public void requestPackets(TrafficSelector selector, PacketPriority priority,
                                ApplicationId appId) {
-        checkPermission(PACKET_READ);
-        checkNotNull(selector, "Selector cannot be null");
-        checkNotNull(appId, "Application ID cannot be null");
+        if (requestInterceptsEnabled) {
+            checkPermission(PACKET_READ);
+            checkNotNull(selector, "Selector cannot be null");
+            checkNotNull(appId, "Application ID cannot be null");
 
-        PacketRequest request = new DefaultPacketRequest(selector, priority, appId,
-                                                         localNodeId, Optional.empty());
-        store.requestPackets(request);
+            PacketRequest request = new DefaultPacketRequest(selector, priority, appId,
+                    localNodeId, Optional.empty());
+            store.requestPackets(request);
+        } else {
+            log.warn("requestPackets was skipped: request intercepts are disabled");
+        }
     }
 
     @Override
     public void requestPackets(TrafficSelector selector, PacketPriority priority,
                                ApplicationId appId, Optional<DeviceId> deviceId) {
-        checkPermission(PACKET_READ);
-        checkNotNull(selector, "Selector cannot be null");
-        checkNotNull(appId, "Application ID cannot be null");
+        if (requestInterceptsEnabled) {
+            checkPermission(PACKET_READ);
+            checkNotNull(selector, "Selector cannot be null");
+            checkNotNull(appId, "Application ID cannot be null");
 
-        PacketRequest request =
-                new DefaultPacketRequest(selector, priority, appId,
-                                         localNodeId, deviceId);
+            PacketRequest request =
+                    new DefaultPacketRequest(selector, priority, appId,
+                            localNodeId, deviceId);
 
-        store.requestPackets(request);
-
+            store.requestPackets(request);
+        } else {
+            log.warn("requestPackets was skipped: request intercepts are disabled");
+        }
     }
 
     @Override
     public void cancelPackets(TrafficSelector selector, PacketPriority priority,
                               ApplicationId appId) {
-        checkPermission(PACKET_READ);
-        checkNotNull(selector, "Selector cannot be null");
-        checkNotNull(appId, "Application ID cannot be null");
+        if (requestInterceptsEnabled) {
+            checkPermission(PACKET_READ);
+            checkNotNull(selector, "Selector cannot be null");
+            checkNotNull(appId, "Application ID cannot be null");
 
 
-        PacketRequest request = new DefaultPacketRequest(selector, priority, appId,
-                                                         localNodeId, Optional.empty());
-        store.cancelPackets(request);
+            PacketRequest request = new DefaultPacketRequest(selector, priority, appId,
+                    localNodeId, Optional.empty());
+            store.cancelPackets(request);
+        } else {
+            log.warn("cancelPackets was requested but request intercepts are disabled");
+        }
     }
 
     @Override
     public void cancelPackets(TrafficSelector selector, PacketPriority priority,
                               ApplicationId appId, Optional<DeviceId> deviceId) {
-        checkPermission(PACKET_READ);
-        checkNotNull(selector, "Selector cannot be null");
-        checkNotNull(appId, "Application ID cannot be null");
+        if (requestInterceptsEnabled) {
+            checkPermission(PACKET_READ);
+            checkNotNull(selector, "Selector cannot be null");
+            checkNotNull(appId, "Application ID cannot be null");
 
-        PacketRequest request = new DefaultPacketRequest(selector, priority,
-                                                         appId, localNodeId,
-                                                         deviceId);
-        store.cancelPackets(request);
+            PacketRequest request = new DefaultPacketRequest(selector, priority,
+                    appId, localNodeId,
+                    deviceId);
+            store.cancelPackets(request);
+        } else {
+            log.warn("cancelPackets was requested but request intercepts are disabled");
+        }
     }
 
     @Override
