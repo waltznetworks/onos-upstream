@@ -51,6 +51,7 @@ import org.onosproject.net.flow.criteria.EthTypeCriterion;
 import org.onosproject.net.flow.criteria.IPCriterion;
 import org.onosproject.net.flow.criteria.MplsCriterion;
 import org.onosproject.net.flow.criteria.PortCriterion;
+import org.onosproject.net.flow.criteria.UdpPortCriterion;
 import org.onosproject.net.flow.criteria.VlanIdCriterion;
 import org.onosproject.net.flow.instructions.Instruction;
 import org.onosproject.net.flowobjective.FilteringObjective;
@@ -460,10 +461,10 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
             IPCriterion destinationCriterion = (IPCriterion) selector.getCriterion(Criterion.Type.IPV4_DST);
             IPCriterion sourceCriterion = (IPCriterion) selector.getCriterion(Criterion.Type.IPV4_SRC);
             PortCriterion inPortCriterion = (PortCriterion) selector.getCriterion(Criterion.Type.IN_PORT);
+            UdpPortCriterion udpSrcPortCriterion = (UdpPortCriterion) selector.getCriterion(Criterion.Type.UDP_SRC);
+            UdpPortCriterion udpDstPortCriterion = (UdpPortCriterion) selector.getCriterion(Criterion.Type.UDP_DST);
 
-            filteredSelectorBuilder = filteredSelectorBuilder
-                .matchEthType(Ethernet.TYPE_IPV4)
-                .matchIPDst(destinationCriterion.ip());
+            filteredSelectorBuilder = filteredSelectorBuilder.matchEthType(Ethernet.TYPE_IPV4);
 
             if (sourceCriterion != null) {
                 filteredSelectorBuilder = filteredSelectorBuilder.matchIPSrc(sourceCriterion.ip());
@@ -473,7 +474,20 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
                 filteredSelectorBuilder = filteredSelectorBuilder.matchInPort(inPortCriterion.port());
             }
 
+            if (destinationCriterion != null) {
+                filteredSelectorBuilder = filteredSelectorBuilder.matchIPDst(destinationCriterion.ip());
+            }
+
+            if (udpSrcPortCriterion != null) {
+                filteredSelectorBuilder = filteredSelectorBuilder.matchUdpSrc(udpSrcPortCriterion.udpPort());
+            }
+
+            if (udpDstPortCriterion != null) {
+                filteredSelectorBuilder = filteredSelectorBuilder.matchUdpDst(udpDstPortCriterion.udpPort());
+            }
+
             forTableId = ipv4UnicastTableId;
+
             log.debug("processing IPv4 specific forwarding objective");
         } else {
             filteredSelectorBuilder = filteredSelectorBuilder
