@@ -49,8 +49,10 @@ import org.onosproject.net.flow.criteria.Criterion;
 import org.onosproject.net.flow.criteria.EthCriterion;
 import org.onosproject.net.flow.criteria.EthTypeCriterion;
 import org.onosproject.net.flow.criteria.IPCriterion;
+import org.onosproject.net.flow.criteria.IPProtocolCriterion;
 import org.onosproject.net.flow.criteria.MplsCriterion;
 import org.onosproject.net.flow.criteria.PortCriterion;
+import org.onosproject.net.flow.criteria.TcpPortCriterion;
 import org.onosproject.net.flow.criteria.UdpPortCriterion;
 import org.onosproject.net.flow.criteria.VlanIdCriterion;
 import org.onosproject.net.flow.instructions.Instruction;
@@ -463,6 +465,10 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
             PortCriterion inPortCriterion = (PortCriterion) selector.getCriterion(Criterion.Type.IN_PORT);
             UdpPortCriterion udpSrcPortCriterion = (UdpPortCriterion) selector.getCriterion(Criterion.Type.UDP_SRC);
             UdpPortCriterion udpDstPortCriterion = (UdpPortCriterion) selector.getCriterion(Criterion.Type.UDP_DST);
+            TcpPortCriterion tcpSrcPortCriterion = (TcpPortCriterion) selector.getCriterion(Criterion.Type.TCP_SRC);
+            TcpPortCriterion tcpDstPortCriterion = (TcpPortCriterion) selector.getCriterion(Criterion.Type.TCP_DST);
+            IPProtocolCriterion ipProtocolCriterion = (IPProtocolCriterion) selector.getCriterion(
+                    Criterion.Type.IP_PROTO);
 
             filteredSelectorBuilder = filteredSelectorBuilder.matchEthType(Ethernet.TYPE_IPV4);
 
@@ -484,6 +490,19 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
 
             if (udpDstPortCriterion != null) {
                 filteredSelectorBuilder = filteredSelectorBuilder.matchUdpDst(udpDstPortCriterion.udpPort());
+            }
+
+            if (tcpSrcPortCriterion != null) {
+                filteredSelectorBuilder = filteredSelectorBuilder.matchTcpSrc(tcpSrcPortCriterion.tcpPort());
+            }
+
+            if (tcpDstPortCriterion != null) {
+                filteredSelectorBuilder = filteredSelectorBuilder.matchTcpDst(tcpDstPortCriterion.tcpPort());
+            }
+
+            if (ipProtocolCriterion != null) {
+                filteredSelectorBuilder = filteredSelectorBuilder.matchIPProtocol(
+                        Integer.valueOf(ipProtocolCriterion.protocol()).byteValue());
             }
 
             forTableId = ipv4UnicastTableId;
