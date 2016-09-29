@@ -472,7 +472,8 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
             UdpPortCriterion udpDstPortCriterion = (UdpPortCriterion) selector.getCriterion(Criterion.Type.UDP_DST);
             TcpPortCriterion tcpSrcPortCriterion = (TcpPortCriterion) selector.getCriterion(Criterion.Type.TCP_SRC);
             TcpPortCriterion tcpDstPortCriterion = (TcpPortCriterion) selector.getCriterion(Criterion.Type.TCP_DST);
-            IPProtocolCriterion ipProtocolCriterion = (IPProtocolCriterion) selector.getCriterion(Criterion.Type.IP_PROTO);
+            IPProtocolCriterion ipProtocolCriterion = (IPProtocolCriterion) selector.getCriterion(
+                    Criterion.Type.IP_PROTO);
 
             filteredSelectorBuilder = filteredSelectorBuilder.matchEthType(Ethernet.TYPE_IPV4);
 
