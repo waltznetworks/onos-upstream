@@ -23,7 +23,6 @@ import org.apache.felix.scr.annotations.Deactivate;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.onlab.packet.ChassisId;
-import org.onlab.util.SharedScheduledExecutors;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.core.ApplicationId;
@@ -127,6 +126,7 @@ public class NetconfDeviceProvider extends AbstractProvider
     //FIXME eventually a property
     private static final int ISREACHABLE_TIMEOUT = 2000;
     private static final int DEFAULT_POLL_FREQUENCY_SECONDS = 30;
+    private static final int DEFAULT_PORT_STATS_POLL_FREQUENCY_MILLISECONDS = 5500;
 
     private final ExecutorService executor =
             Executors.newFixedThreadPool(5, groupedThreads("onos/netconfdeviceprovider",
@@ -136,11 +136,17 @@ public class NetconfDeviceProvider extends AbstractProvider
                                      groupedThreads("onos/netconfdeviceprovider",
                                                     "connection-executor-%d", log));
 
+    protected ScheduledExecutorService portStatsPollingExecutor
+            = newScheduledThreadPool(CORE_POOL_SIZE,
+                                     groupedThreads("onos/netconfdeviceprovider",
+                                                    "portstatspolling-executor-%d", log));
+
     private DeviceProviderService providerService;
     private NetconfDeviceListener innerNodeListener = new InnerNetconfDeviceListener();
     private InternalDeviceListener deviceListener = new InternalDeviceListener();
     private NodeId localNodeId;
     private ScheduledFuture<?> scheduledTask;
+    private ScheduledFuture<?> scheduledPortStatsPollingTask;
 
     private final ConfigFactory factory =
             new ConfigFactory<ApplicationId, NetconfProviderConfig>(APP_SUBJECT_FACTORY,
@@ -156,10 +162,6 @@ public class NetconfDeviceProvider extends AbstractProvider
     private ApplicationId appId;
     private boolean active;
 
-    private static final int POLLING_INTERVAL = 5500; // milliseconds
-    private final ScheduledExecutorService scheduledExecutorService = SharedScheduledExecutors.getPoolThreadExecutor();
-    private ScheduledFuture<?> poller;
-
 
     @Activate
     public void activate() {
@@ -173,9 +175,7 @@ public class NetconfDeviceProvider extends AbstractProvider
         executor.execute(NetconfDeviceProvider.this::connectDevices);
         localNodeId = clusterService.getLocalNode().id();
         scheduledTask = schedulePolling();
-        /* Poll devices every 5500 milliseconds */
-        poller = scheduledExecutorService.scheduleAtFixedRate(this::pollDevices, POLLING_INTERVAL,
-                POLLING_INTERVAL, TimeUnit.MILLISECONDS);
+        scheduledPortStatsPollingTask = schedulePortStatsPolling();
         log.info("Started");
     }
 
@@ -194,9 +194,7 @@ public class NetconfDeviceProvider extends AbstractProvider
         providerService = null;
         cfgService.unregisterConfigFactory(factory);
         scheduledTask.cancel(true);
-        if (poller != null) {
-            poller.cancel(false);
-        }
+        scheduledPortStatsPollingTask.cancel(true);
         executor.shutdown();
         log.info("Stopped");
     }
@@ -212,6 +210,13 @@ public class NetconfDeviceProvider extends AbstractProvider
                                                       DEFAULT_POLL_FREQUENCY_SECONDS / 10,
                                                       DEFAULT_POLL_FREQUENCY_SECONDS,
                                                       TimeUnit.SECONDS);
+    }
+
+    private ScheduledFuture schedulePortStatsPolling() {
+        return portStatsPollingExecutor.scheduleAtFixedRate(this::pollDevices,
+                                                            DEFAULT_PORT_STATS_POLL_FREQUENCY_MILLISECONDS / 10,
+                                                            DEFAULT_PORT_STATS_POLL_FREQUENCY_MILLISECONDS,
+                                                            TimeUnit.MILLISECONDS);
     }
 
     @Override
