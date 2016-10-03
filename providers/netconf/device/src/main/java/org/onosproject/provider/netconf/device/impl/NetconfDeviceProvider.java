@@ -20,10 +20,14 @@ import com.google.common.base.Preconditions;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
+import org.apache.felix.scr.annotations.Modified;
+import org.apache.felix.scr.annotations.Property;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.onlab.packet.ChassisId;
 import org.onlab.util.SharedScheduledExecutors;
+import org.onosproject.cfg.ComponentConfigService;
+import org.onosproject.cfg.ConfigProperty;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.core.ApplicationId;
@@ -68,6 +72,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -113,6 +118,9 @@ public class NetconfDeviceProvider extends AbstractProvider
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected ClusterService clusterService;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected ComponentConfigService componentConfigService;
+
     private static final String APP_NAME = "org.onosproject.netconf";
     private static final String SCHEME_NAME = "netconf";
     private static final String DEVICE_PROVIDER_PACKAGE = "org.onosproject.netconf.provider.device";
@@ -147,7 +155,11 @@ public class NetconfDeviceProvider extends AbstractProvider
     private ApplicationId appId;
     private boolean active;
 
-    private static final int POLLING_INTERVAL = 5500; // milliseconds
+    private static final int DEFAULT_POLLING_INTERVAL = 5500; // milliseconds
+    @Property(name = "pollingInterval", intValue = DEFAULT_POLLING_INTERVAL,
+            label = "Configure polling interval in millisecond for port statistic querying")
+    private int pollingInterval = DEFAULT_POLLING_INTERVAL;
+
     private final ScheduledExecutorService scheduledExecutorService = SharedScheduledExecutors.getPoolThreadExecutor();
     private ScheduledFuture<?> poller;
 
@@ -155,6 +167,8 @@ public class NetconfDeviceProvider extends AbstractProvider
     @Activate
     public void activate() {
         active = true;
+        componentConfigService.registerProperties(getClass());
+        modified();
         providerService = providerRegistry.register(this);
         appId = coreService.registerApplication(APP_NAME);
         cfgService.registerConfigFactory(factory);
@@ -163,15 +177,13 @@ public class NetconfDeviceProvider extends AbstractProvider
         deviceService.addListener(deviceListener);
         executor.execute(NetconfDeviceProvider.this::connectDevices);
         localNodeId = clusterService.getLocalNode().id();
-        /* Poll devices every 5500 milliseconds */
-        poller = scheduledExecutorService.scheduleAtFixedRate(this::pollDevices, POLLING_INTERVAL,
-                POLLING_INTERVAL, MILLISECONDS);
         log.info("Started");
     }
 
 
     @Deactivate
     public void deactivate() {
+        componentConfigService.unregisterProperties(getClass(), false);
         deviceService.removeListener(deviceListener);
         active = false;
         controller.getNetconfDevices().forEach(id -> {
@@ -188,6 +200,26 @@ public class NetconfDeviceProvider extends AbstractProvider
         }
         executor.shutdown();
         log.info("Stopped");
+    }
+
+    @Modified
+    public void modified() {
+        Set<ConfigProperty> configProperties = componentConfigService.getProperties(getClass().getCanonicalName());
+        for (ConfigProperty property : configProperties) {
+            if (property.name().equals("pollingInterval")) {
+                changePollingInterval(property.asInteger());
+            }
+        }
+    }
+
+    private void changePollingInterval(int pollingInterval) {
+        this.pollingInterval = pollingInterval;
+
+        if (poller != null) {
+            poller.cancel(false);
+        }
+        poller = scheduledExecutorService.scheduleAtFixedRate(this::pollDevices, pollingInterval / 10,
+                pollingInterval, MILLISECONDS);
     }
 
     public NetconfDeviceProvider() {
