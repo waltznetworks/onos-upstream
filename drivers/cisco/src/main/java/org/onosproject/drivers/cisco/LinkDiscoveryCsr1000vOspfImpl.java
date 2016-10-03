@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -79,6 +80,10 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
      */
     private Set<LinkDescription> parseCsr1000vOspfLinks(HierarchicalConfiguration cfg) {
         Set<LinkDescription> links = new HashSet<>();
+        List<Object> ospfLinkInfo = cfg.getList("data.cli-oper-data-block.item.response");
+        for (int i = 0; i < ospfLinkInfo.size(); i++) {
+            log.info("OSPF neighbor: {}", ospfLinkInfo.get(i).toString());
+        }
 
         return links;
     }
