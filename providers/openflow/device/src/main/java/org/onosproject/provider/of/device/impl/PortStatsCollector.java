@@ -51,7 +51,7 @@ public class PortStatsCollector {
      *
      * @param timer     timer to use for scheduling
      * @param sw        switch to pull
-     * @param interval  interval for collecting port statistic
+     * @param interval  interval for collecting port statistic in milli-seconds
      */
     PortStatsCollector(Timer timer, OpenFlowSwitch sw, int interval) {
         this.timer = timer;
@@ -74,7 +74,7 @@ public class PortStatsCollector {
         log.info("Starting Port Stats collection thread for {}", sw.getStringId());
         task = new InternalTimerTask();
         SharedExecutors.getTimer().scheduleAtFixedRate(task, 1 * SECONDS,
-                                                       refreshInterval * SECONDS);
+                                                       refreshInterval);
     }
 
     /**
@@ -95,8 +95,8 @@ public class PortStatsCollector {
         this.refreshInterval = pollInterval;
         task.cancel();
         task = new InternalTimerTask();
-        timer.scheduleAtFixedRate(task, refreshInterval * SECONDS,
-                                  refreshInterval * SECONDS);
+        timer.scheduleAtFixedRate(task, refreshInterval,
+                                  refreshInterval);
     }
 
     /**
