@@ -72,8 +72,7 @@ public class PortStatsCollector {
     public synchronized void start() {
         log.info("Starting Port Stats collection thread for {}", sw.getStringId());
         task = new InternalTimerTask();
-        timer.scheduleAtFixedRate(task, 1 * SECONDS,
-                                  refreshInterval);
+        timer.scheduleAtFixedRate(task, 1 * SECONDS, refreshInterval);
     }
 
     /**
@@ -94,8 +93,7 @@ public class PortStatsCollector {
         this.refreshInterval = pollInterval;
         task.cancel();
         task = new InternalTimerTask();
-        timer.scheduleAtFixedRate(task, refreshInterval * SECONDS,
-                                  refreshInterval * SECONDS);
+        timer.scheduleAtFixedRate(task, 1 * SECONDS, refreshInterval);
     }
 
     /**
