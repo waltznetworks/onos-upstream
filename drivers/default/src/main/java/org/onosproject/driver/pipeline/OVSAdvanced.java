@@ -405,6 +405,7 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
         TrafficTreatment.Builder treatmentBuilder = DefaultTrafficTreatment
                 .builder();
         treatmentBuilder.wipeDeferred();
+        TrafficTreatment treatment = null;
 
         if (fwd.nextId() != null) {
             NextGroup next = flowObjectiveStore.getNextGroup(fwd.nextId());
@@ -422,12 +423,13 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
                 treatmentBuilder.deferred().group(group.id());
                 log.debug("Adding OUTGROUP action");
             }
+            treatment = treatmentBuilder.build();
         } else if (fwd.treatment() == null) {
             log.warn("VERSATILE forwarding objective need next objective ID or treatment.");
             return Collections.emptySet();
+        } else {
+            treatment = fwd.treatment();
         }
-
-        TrafficTreatment treatment = treatmentBuilder.build();
 
         FlowRule.Builder ruleBuilder = DefaultFlowRule.builder()
                 .fromApp(fwd.appId()).withPriority(fwd.priority())
