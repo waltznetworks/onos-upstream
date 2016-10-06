@@ -25,6 +25,7 @@ import com.google.common.cache.RemovalNotification;
 
 import org.onlab.osgi.ServiceDirectory;
 import org.onlab.packet.Ethernet;
+import org.onlab.packet.IPv4;
 import org.onlab.packet.VlanId;
 import org.onlab.util.KryoNamespace;
 import org.onosproject.core.ApplicationId;
@@ -485,19 +486,23 @@ public class OVSAdvanced extends AbstractHandlerBehaviour
             }
 
             if (udpSrcPortCriterion != null) {
-                filteredSelectorBuilder = filteredSelectorBuilder.matchUdpSrc(udpSrcPortCriterion.udpPort());
+                filteredSelectorBuilder = filteredSelectorBuilder.matchIPProtocol(IPv4.PROTOCOL_UDP)
+                        .matchUdpSrc(udpSrcPortCriterion.udpPort());
             }
 
             if (udpDstPortCriterion != null) {
-                filteredSelectorBuilder = filteredSelectorBuilder.matchUdpDst(udpDstPortCriterion.udpPort());
+                filteredSelectorBuilder = filteredSelectorBuilder.matchIPProtocol(IPv4.PROTOCOL_UDP)
+                        .matchUdpDst(udpDstPortCriterion.udpPort());
             }
 
             if (tcpSrcPortCriterion != null) {
-                filteredSelectorBuilder = filteredSelectorBuilder.matchTcpSrc(tcpSrcPortCriterion.tcpPort());
+                filteredSelectorBuilder = filteredSelectorBuilder.matchIPProtocol(IPv4.PROTOCOL_TCP)
+                        .matchTcpSrc(tcpSrcPortCriterion.tcpPort());
             }
 
             if (tcpDstPortCriterion != null) {
-                filteredSelectorBuilder = filteredSelectorBuilder.matchTcpDst(tcpDstPortCriterion.tcpPort());
+                filteredSelectorBuilder = filteredSelectorBuilder.matchIPProtocol(IPv4.PROTOCOL_TCP)
+                        .matchTcpDst(tcpDstPortCriterion.tcpPort());
             }
 
             if (ipProtocolCriterion != null) {
