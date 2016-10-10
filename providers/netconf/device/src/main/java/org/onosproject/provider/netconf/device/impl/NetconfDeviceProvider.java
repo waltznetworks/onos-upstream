@@ -20,9 +20,14 @@ import com.google.common.base.Preconditions;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
+import org.apache.felix.scr.annotations.Modified;
+import org.apache.felix.scr.annotations.Property;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.onlab.packet.ChassisId;
+import org.onlab.util.SharedScheduledExecutors;
+import org.onosproject.cfg.ComponentConfigService;
+import org.onosproject.cfg.ConfigProperty;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.core.ApplicationId;
@@ -37,6 +42,7 @@ import org.onosproject.net.MastershipRole;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.SparseAnnotations;
 import org.onosproject.net.behaviour.PortDiscovery;
+import org.onosproject.net.behaviour.PortStatsQuery;
 import org.onosproject.net.config.ConfigFactory;
 import org.onosproject.net.config.NetworkConfigEvent;
 import org.onosproject.net.config.NetworkConfigListener;
@@ -50,6 +56,7 @@ import org.onosproject.net.device.DeviceProvider;
 import org.onosproject.net.device.DeviceProviderRegistry;
 import org.onosproject.net.device.DeviceProviderService;
 import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.device.PortStatistics;
 import org.onosproject.net.key.DeviceKey;
 import org.onosproject.net.key.DeviceKeyAdminService;
 import org.onosproject.net.key.DeviceKeyId;
@@ -65,6 +72,8 @@ import java.net.Socket;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -72,7 +81,9 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static java.util.concurrent.Executors.newScheduledThreadPool;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.onlab.util.Tools.groupedThreads;
+import static org.onosproject.net.Device.Type.ROUTER;
 import static org.onosproject.net.config.basics.SubjectFactories.APP_SUBJECT_FACTORY;
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -109,6 +120,9 @@ public class NetconfDeviceProvider extends AbstractProvider
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected ClusterService clusterService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected ComponentConfigService componentConfigService;
 
     private static final String APP_NAME = "org.onosproject.netconf";
     private static final String SCHEME_NAME = "netconf";
@@ -151,10 +165,20 @@ public class NetconfDeviceProvider extends AbstractProvider
     private ApplicationId appId;
     private boolean active;
 
+    private static final int DEFAULT_POLLING_INTERVAL = 5500; // milliseconds
+    @Property(name = "pollingInterval", intValue = DEFAULT_POLLING_INTERVAL,
+            label = "Configure polling interval in millisecond for port statistic querying")
+    private int pollingInterval = DEFAULT_POLLING_INTERVAL;
+
+    private final ScheduledExecutorService scheduledExecutorService = SharedScheduledExecutors.getPoolThreadExecutor();
+    private ScheduledFuture<?> poller;
+
 
     @Activate
     public void activate() {
         active = true;
+        componentConfigService.registerProperties(getClass());
+        modified();
         providerService = providerRegistry.register(this);
         appId = coreService.registerApplication(APP_NAME);
         cfgService.registerConfigFactory(factory);
@@ -170,6 +194,7 @@ public class NetconfDeviceProvider extends AbstractProvider
 
     @Deactivate
     public void deactivate() {
+        componentConfigService.unregisterProperties(getClass(), false);
         deviceService.removeListener(deviceListener);
         active = false;
         controller.getNetconfDevices().forEach(id -> {
@@ -182,8 +207,31 @@ public class NetconfDeviceProvider extends AbstractProvider
         providerService = null;
         cfgService.unregisterConfigFactory(factory);
         scheduledTask.cancel(true);
+        if (poller != null) {
+            poller.cancel(false);
+        }
         executor.shutdown();
         log.info("Stopped");
+    }
+
+    @Modified
+    public void modified() {
+        Set<ConfigProperty> configProperties = componentConfigService.getProperties(getClass().getCanonicalName());
+        for (ConfigProperty property : configProperties) {
+            if (property.name().equals("pollingInterval")) {
+                changePollingInterval(property.asInteger());
+            }
+        }
+    }
+
+    private void changePollingInterval(int pollingInterval) {
+        this.pollingInterval = pollingInterval;
+
+        if (poller != null) {
+            poller.cancel(false);
+        }
+        poller = scheduledExecutorService.scheduleAtFixedRate(this::pollDevices, pollingInterval / 10,
+                pollingInterval, MILLISECONDS);
     }
 
     public NetconfDeviceProvider() {
@@ -278,6 +326,51 @@ public class NetconfDeviceProvider extends AbstractProvider
     public void changePortState(DeviceId deviceId, PortNumber portNumber,
                                 boolean enable) {
         // TODO if required
+    }
+
+    private void pollDevices() {
+        for (Device device: deviceService.getAvailableDevices(ROUTER)) {
+            if (mastershipService.isLocalMaster(device.id())) {
+                executor.execute(() -> pollingTask(device.id()));
+            }
+        }
+    }
+
+    private void pollingTask(DeviceId deviceId) {
+        log.debug("Polling device {}...", deviceId);
+        if (isReachable(deviceId)) {
+            log.debug("Netconf device {} is reachable, updating ports and stats", deviceId);
+            updatePortsAndStats(deviceId);
+        } else {
+            log.debug("Netconf device {} is unreachable, disconnecting", deviceId);
+            disconnectDevice(deviceId);
+        }
+    }
+
+    private void updatePortsAndStats(DeviceId deviceId) {
+        Device device = deviceService.getDevice(deviceId);
+        /* Update port description first */
+        discoverPorts(deviceId);
+        /* If driver has PortStatsQuery feature implemented, query port stats on the device
+         * and push the stats into ONOS core
+         */
+        if (device.is(PortStatsQuery.class)) {
+            PortStatsQuery statsQuery = device.as(PortStatsQuery.class);
+            Collection<PortStatistics> portStats = statsQuery.getPortStatistics(deviceId);
+            if (portStats != null) {
+                providerService.updatePortStatistics(deviceId, portStats);
+            }
+        } else {
+            log.warn("No portStatsQuery behaviour for device {}", deviceId);
+        }
+    }
+
+    private void disconnectDevice(DeviceId deviceId) {
+        Preconditions.checkNotNull(deviceId, ISNULL);
+        log.debug("Netconf device {} removed from Netconf subController", deviceId);
+        deviceKeyAdminService.removeKey(DeviceKeyId.deviceKeyId(deviceId.toString()));
+        controller.disconnectDevice(deviceId, true);
+        providerService.deviceDisconnected(deviceId);
     }
 
     private class InnerNetconfDeviceListener implements NetconfDeviceListener {
