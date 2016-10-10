@@ -19,6 +19,8 @@ import org.slf4j.Logger;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.slf4j.LoggerFactory.getLogger;
@@ -75,7 +77,7 @@ public class PortGetterCsr1000vImpl extends AbstractHandlerBehaviour
         rpc.append("</config-format-text-cmd>");
         rpc.append("<oper-data-format-text-block>");
         /* Use regular expression to extract status of the interfaces */
-        rpc.append("<exec>show interfaces | include (line protocol)|(BW [0-9]+ Kbit/sec)</exec>");
+        rpc.append("<exec>show interfaces | include (line protocol)|(Internet address is)|(BW [0-9]+ Kbit/sec)</exec>");
         rpc.append("</oper-data-format-text-block>");
         rpc.append("</filter>");
         rpc.append("</get>");
@@ -103,7 +105,9 @@ public class PortGetterCsr1000vImpl extends AbstractHandlerBehaviour
             PortNumber portNumber = PortNumber.portNumber(i + 1);
             /* Example string:
              *   GigabitEthernet1 is up, line protocol is up
+             *   Internet address is 192.168.0.4/24
              *   MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+             *   Internet address is 10.0.4.1/24
              *   GigabitEthernet2 is administratively down, line protocol is down
              *   MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
              *
@@ -112,9 +116,11 @@ public class PortGetterCsr1000vImpl extends AbstractHandlerBehaviour
              * (i * 4 + 2)th cell.
              */
             boolean isEnabled = portStatus.get(i * 4).toString().contains("up");
+            String ipv4Address = getIpAddress(portStatus.get(i * 4 + 1).toString());
             long portSpeed = getPortSpeed(portStatus.get(i * 4 + 2).toString());
             DefaultAnnotations annotations = DefaultAnnotations.builder().
                     set(AnnotationKeys.PORT_NAME, portNames.get(i).toString().replace("interface ", "")).
+                    set(AnnotationKeys.PORT_IP, ipv4Address).
                     build();
             portDescriptions.add(new DefaultPortDescription(portNumber, isEnabled, Port.Type.COPPER, portSpeed,
                     annotations));
@@ -125,5 +131,17 @@ public class PortGetterCsr1000vImpl extends AbstractHandlerBehaviour
     private static long getPortSpeed(String str) {
         /* Example string: BW 1000000 Kbit/sec */
         return Long.parseLong(str.split("BW ")[1].split(" Kbit/sec")[0]) / 1000;
+    }
+
+    private static String getIpAddress(String str) {
+        /* Example string: line protocol is up Internet address is 192.168.0.4/24 MTU 1500 bytes */
+        String ipv4Pattern = "(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})/(\\d{1,2})";
+        Pattern pattern = Pattern.compile(ipv4Pattern);
+        Matcher matcher = pattern.matcher(str);
+
+        if (matcher.find()) {
+            return matcher.group();
+        }
+        return "0.0.0.0/0";
     }
 }
