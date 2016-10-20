@@ -157,12 +157,12 @@ public class OpenFlowDeviceProvider extends AbstractProvider implements DevicePr
     private final InternalDeviceProvider listener = new InternalDeviceProvider();
 
     private static final String POLL_PROP_NAME = "portStatsPollFrequency";
-    private static final int POLL_INTERVAL = 5;
+    private static final int POLL_INTERVAL = 5000;
     @Property(name = POLL_PROP_NAME, intValue = POLL_INTERVAL,
-    label = "Frequency (in seconds) for polling switch Port statistics")
+            label = "Frequency (in milli-seconds) for polling switch Port statistics")
     private int portStatsPollFrequency = POLL_INTERVAL;
 
-    private final Timer timer = new Timer("onos-openflow-collector");
+    private final Timer timer = new Timer("onos-openflow-portstats-collector");
 
     private HashMap<Dpid, PortStatsCollector> collectors = Maps.newHashMap();
 
