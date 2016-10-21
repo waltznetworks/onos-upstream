@@ -21,7 +21,7 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos</artifactId>
-        <version>1.7.0</version>
+        <version>1.7.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>onos-apps</artifactId>
@@ -76,8 +76,10 @@
         <module>scalablegateway</module>
         <module>bmv2-demo</module>
         <module>yms</module>
+        <module>tetopology</module>
         <module>rabbitmq</module>
         <module>learning-switch</module>
+        <module>tenbi</module>
     </modules>
 
 
