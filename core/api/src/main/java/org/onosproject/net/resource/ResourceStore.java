@@ -37,7 +37,7 @@ public interface ResourceStore extends Store<ResourceEvent, ResourceStoreDelegat
      * @param resources resources to be registered
      * @return true if the registration succeeds, false otherwise
      */
-    boolean register(List<Resource> resources);
+    boolean register(List<? extends Resource> resources);
 
     /**
      * Unregisters the resources in transactional way.
@@ -48,7 +48,7 @@ public interface ResourceStore extends Store<ResourceEvent, ResourceStoreDelegat
      * @param ids resources to be unregistered
      * @return true if the registration succeeds, false otherwise
      */
-    boolean unregister(List<ResourceId> ids);
+    boolean unregister(List<? extends ResourceId> ids);
 
     /**
      * Allocates the specified resources to the specified consumer in transactional way.
@@ -60,7 +60,7 @@ public interface ResourceStore extends Store<ResourceEvent, ResourceStoreDelegat
      * @param consumer resource consumer which the resources are allocated to
      * @return true if the allocation succeeds, false otherwise.
      */
-    boolean allocate(List<Resource> resources, ResourceConsumer consumer);
+    boolean allocate(List<? extends Resource> resources, ResourceConsumer consumer);
 
     /**
      * Releases the specified allocated resources in transactional way.
@@ -109,6 +109,18 @@ public interface ResourceStore extends Store<ResourceEvent, ResourceStoreDelegat
      * @return a set of the child resources of the specified resource
      */
     Set<Resource> getChildResources(DiscreteResourceId parent);
+
+    /**
+     * Returns a set of the child resources of the specified parent and whose type is
+     * the specified class.
+     *
+     * @param parent ID of the parent of the resources to be returned
+     * @param cls class instance of the children
+     * @param <T> type of the resource
+     * @return a set of the child resources of the specified parent and whose type is
+     * the specified class
+     */
+    <T> Set<Resource> getChildResources(DiscreteResourceId parent, Class<T> cls);
 
     /**
      * Returns a collection of the resources which are children of the specified parent and

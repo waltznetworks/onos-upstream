@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Open Networking Laboratory
+ * Copyright 2016-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,7 +67,7 @@ public class NetSnmpAlarmConsumer extends AbstractHandlerBehaviour implements Al
             IfTable interfaceTable = (IfTable) networkDevice.getRootObject()
                     .getEntity(CLASS_REGISTRY.getClassToOidMap().get(IfTable.class));
             if (interfaceTable != null) {
-                interfaceTable.getEntries().values().stream().forEach((ifEntry) -> {
+                interfaceTable.getEntries().values().forEach((ifEntry) -> {
                     if (ifEntry.getIfAdminStatus() == 1 && ifEntry.getIfOperStatus() == 2) {
                         alarms.add(new DefaultAlarm.Builder(deviceId, "Link Down.",
                                                             Alarm.SeverityLevel.CRITICAL,

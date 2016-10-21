@@ -46,7 +46,7 @@ public enum OspfPacketType {
     /**
      * Creates instance of OSPF packet types.
      *
-     * @param value
+     * @param value OSPF packet types
      */
     OspfPacketType(int value) {
         this.value = value;

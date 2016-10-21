@@ -25,6 +25,7 @@ import org.onosproject.xosclient.api.VtnPortId;
 import org.onosproject.xosclient.api.VtnServiceId;
 import org.onosproject.xosclient.api.XosAccess;
 import org.openstack4j.api.OSClient;
+import org.openstack4j.api.exceptions.AuthenticationException;
 import org.openstack4j.model.network.IP;
 import org.openstack4j.model.network.Port;
 import org.openstack4j.openstack.OSFactory;
@@ -114,16 +115,18 @@ public final class DefaultVtnPortApi extends XosApi implements VtnPortApi {
         }
 
         Map<IpAddress, MacAddress> addressPairs = Maps.newHashMap();
-        osPort.getAllowedAddressPairs().stream().forEach(
+        osPort.getAllowedAddressPairs().forEach(
                 pair -> addressPairs.put(IpAddress.valueOf(pair.getIpAddress()),
-                                         MacAddress.valueOf(pair.getMacAddress())));
+                        MacAddress.valueOf(pair.getMacAddress())));
 
-        return new VtnPort(VtnPortId.of(osPort.getId()),
-                           osPort.getName(),
-                           VtnServiceId.of(osPort.getNetworkId()),
-                           MacAddress.valueOf(osPort.getMacAddress()),
-                           IpAddress.valueOf(ipAddr.getIpAddress()),
-                           addressPairs);
+        return VtnPort.builder()
+                .id(VtnPortId.of(osPort.getId()))
+                .name(osPort.getName())
+                .serviceId(VtnServiceId.of(osPort.getNetworkId()))
+                .mac(osPort.getMacAddress())
+                .ip(ipAddr.getIpAddress())
+                .addressPairs(addressPairs)
+                .build();
     }
 
     // TODO remove this when XOS provides this information
@@ -132,10 +135,15 @@ public final class DefaultVtnPortApi extends XosApi implements VtnPortApi {
 
         // creating a client every time must be inefficient, but this method
         // will be removed once XOS provides equivalent APIs
-        return OSFactory.builder()
-                .endpoint(osAccess.endpoint())
-                .credentials(osAccess.user(), osAccess.password())
-                .tenantName(osAccess.tenant())
-                .authenticate();
+        try {
+            return OSFactory.builder()
+                    .endpoint(osAccess.endpoint())
+                    .credentials(osAccess.user(), osAccess.password())
+                    .tenantName(osAccess.tenant())
+                    .authenticate();
+        } catch (AuthenticationException e) {
+            log.warn("Failed to authenticate OpenStack API with {}", osAccess);
+            return null;
+        }
     }
 }

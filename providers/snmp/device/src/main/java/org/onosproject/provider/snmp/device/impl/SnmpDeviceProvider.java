@@ -137,7 +137,7 @@ public class SnmpDeviceProvider extends AbstractProvider
     public void deactivate(ComponentContext context) {
 
         try {
-            controller.getDevices().stream().forEach(device -> {
+            controller.getDevices().forEach(device -> {
                 deviceBuilderExecutor.execute(new DeviceFactory(device, false));
             });
             deviceBuilderExecutor.awaitTermination(1000, TimeUnit.MILLISECONDS);
@@ -161,7 +161,7 @@ public class SnmpDeviceProvider extends AbstractProvider
         SnmpProviderConfig cfg = netCfgService.getConfig(appId, SnmpProviderConfig.class);
         if (cfg != null) {
             try {
-                cfg.getDevicesInfo().stream().forEach(info -> {
+                cfg.getDevicesInfo().forEach(info -> {
                     SnmpDevice device = new DefaultSnmpDevice(info.ip().toString(),
                                                               info.port(), info.username(), info.password());
                     buildDevice(device);
@@ -287,9 +287,13 @@ public class SnmpDeviceProvider extends AbstractProvider
                 if (d.is(DeviceDescriptionDiscovery.class)) {
                     DeviceDescriptionDiscovery descriptionDiscovery = d.as(DeviceDescriptionDiscovery.class);
                     DeviceDescription description = descriptionDiscovery.discoverDeviceDetails();
-                    deviceStore.createOrUpdateDevice(
-                            new ProviderId("snmp", "org.onosproject.provider.device"),
-                            did, description);
+                    if (description != null) {
+                        deviceStore.createOrUpdateDevice(
+                                new ProviderId("snmp", "org.onosproject.provider.device"),
+                                did, description);
+                    } else {
+                        log.info("No other description given for device {}", d.id());
+                    }
                     providerService.updatePorts(did, descriptionDiscovery.discoverPortDetails());
                 } else {
                     log.warn("No populate description and ports behaviour for device {}", did);

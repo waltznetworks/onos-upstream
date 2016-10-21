@@ -1,6 +1,7 @@
 COMPILE_DEPS = [
     '//lib:CORE_DEPS',
     '//lib:openflowj',
+    '//drivers/default:onos-drivers-default',
     '//drivers/utilities:onos-drivers-utilities',
     '//protocols/openflow/api:onos-protocols-openflow-api',
 ]
@@ -18,6 +19,7 @@ osgi_jar_with_tests (
 )
 
 onos_app (
+    app_name = 'org.onosproject.drivers.corsa',
     title = 'Corsa device drivers',
     category = 'Drivers',
     url = 'http://onosproject.org',

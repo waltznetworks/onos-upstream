@@ -26,6 +26,7 @@ import org.onlab.packet.IpPrefix;
 import org.onlab.packet.MacAddress;
 import org.onlab.packet.VlanId;
 import org.onosproject.TestApplicationId;
+import org.onosproject.app.ApplicationService;
 import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
@@ -103,12 +104,12 @@ public class SingleSwitchFibInstallerTest {
     private static final InterfaceIpAddress INTF2 =
             InterfaceIpAddress.valueOf("192.168.20.2/24");
 
-
     private final Set<Interface> interfaces = Sets.newHashSet();
     private InterfaceService interfaceService;
     private NetworkConfigService networkConfigService;
     private NetworkConfigRegistry networkConfigRegistry;
     private FlowObjectiveService flowObjectiveService;
+    private ApplicationService applicationService;
     private DeviceService deviceService;
     private static final ApplicationId APPID = TestApplicationId.create("foo");
 
@@ -135,6 +136,8 @@ public class SingleSwitchFibInstallerTest {
         expectLastCall().anyTimes();
         networkConfigRegistry = createMock(NetworkConfigRegistry.class);
         flowObjectiveService = createMock(FlowObjectiveService.class);
+        applicationService = createNiceMock(ApplicationService.class);
+        replay(applicationService);
         deviceService = new TestDeviceService();
         CoreService coreService = createNiceMock(CoreService.class);
         expect(coreService.registerApplication(anyString())).andReturn(APPID).anyTimes();
@@ -144,6 +147,7 @@ public class SingleSwitchFibInstallerTest {
         sSfibInstaller.networkConfigRegistry = networkConfigRegistry;
         sSfibInstaller.interfaceService = interfaceService;
         sSfibInstaller.flowObjectiveService = flowObjectiveService;
+        sSfibInstaller.applicationService = applicationService;
         sSfibInstaller.coreService = coreService;
         sSfibInstaller.routeService = new TestRouteService();
         sSfibInstaller.deviceService = deviceService;

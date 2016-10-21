@@ -26,6 +26,7 @@ import org.apache.felix.scr.annotations.Property;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
+import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.mastership.MastershipService;
@@ -57,6 +58,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Strings.isNullOrEmpty;
+import static java.util.concurrent.Executors.newFixedThreadPool;
 import static org.onlab.util.Tools.get;
 import static org.onlab.util.Tools.groupedThreads;
 import static org.slf4j.LoggerFactory.getLogger;
@@ -87,6 +89,9 @@ public class DistributedPacketStore
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected StorageService storageService;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected ComponentConfigService cfgService;
+
     private PacketRequestTracker tracker;
 
     private static final MessageSubject PACKET_OUT_SUBJECT =
@@ -104,7 +109,11 @@ public class DistributedPacketStore
     private static final int MAX_BACKOFF = 50;
 
     @Activate
-    public void activate() {
+    public void activate(ComponentContext context) {
+        cfgService.registerProperties(getClass());
+
+        modified(context);
+
         messageHandlingExecutor = Executors.newFixedThreadPool(
                 messageHandlerThreadPoolSize,
                 groupedThreads("onos/store/packet", "message-handlers", log));
@@ -121,6 +130,7 @@ public class DistributedPacketStore
 
     @Deactivate
     public void deactivate() {
+        cfgService.unregisterProperties(getClass(), false);
         communicationService.removeSubscriber(PACKET_OUT_SUBJECT);
         messageHandlingExecutor.shutdown();
         tracker = null;
@@ -198,7 +208,6 @@ public class DistributedPacketStore
         private PacketRequestTracker() {
             requests = storageService.<TrafficSelector, Set<PacketRequest>>consistentMapBuilder()
                     .withName("onos-packet-requests")
-                    .withPartitionsDisabled()
                     .withSerializer(Serializer.using(KryoNamespaces.API))
                     .build();
         }
@@ -214,10 +223,14 @@ public class DistributedPacketStore
         private AtomicBoolean addInternal(PacketRequest request) {
             AtomicBoolean firstRequest = new AtomicBoolean(false);
             requests.compute(request.selector(), (s, existingRequests) -> {
+                // Reset to false just in case this is a retry due to
+                // ConcurrentModificationException
+                firstRequest.set(false);
                 if (existingRequests == null) {
                     firstRequest.set(true);
                     return ImmutableSet.of(request);
                 } else if (!existingRequests.contains(request)) {
+                    firstRequest.set(true);
                     return ImmutableSet.<PacketRequest>builder()
                                        .addAll(existingRequests)
                                        .add(request)
@@ -240,6 +253,9 @@ public class DistributedPacketStore
         private AtomicBoolean removeInternal(PacketRequest request) {
             AtomicBoolean removedLast = new AtomicBoolean(false);
             requests.computeIfPresent(request.selector(), (s, existingRequests) -> {
+                // Reset to false just in case this is a retry due to
+                // ConcurrentModificationException
+                removedLast.set(false);
                 if (existingRequests.contains(request)) {
                     Set<PacketRequest> newRequests = Sets.newHashSet(existingRequests);
                     newRequests.remove(request);
@@ -279,7 +295,8 @@ public class DistributedPacketStore
      */
     private void restartMessageHandlerThreadPool() {
         ExecutorService prevExecutor = messageHandlingExecutor;
-        messageHandlingExecutor = Executors.newFixedThreadPool(getMessageHandlerThreadPoolSize());
+        messageHandlingExecutor = newFixedThreadPool(getMessageHandlerThreadPoolSize(),
+                                                     groupedThreads("DistPktStore", "messageHandling-%d", log));
         prevExecutor.shutdown();
     }
 

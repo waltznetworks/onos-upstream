@@ -22,7 +22,7 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos-of</artifactId>
-        <version>1.6.0</version>
+        <version>1.7.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>onos-of-api</artifactId>
@@ -49,7 +49,6 @@
             <artifactId>onos-api</artifactId>
             <scope>test</scope>
             <classifier>tests</classifier>
-            <version>${project.version}</version>
         </dependency>
     </dependencies>
 

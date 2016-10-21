@@ -16,6 +16,8 @@
 package org.onosproject.net.flow;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.slf4j.LoggerFactory.getLogger;
 
 import org.slf4j.Logger;
@@ -54,7 +56,7 @@ public class DefaultFlowEntry extends DefaultFlowRule
 
     public DefaultFlowEntry(FlowRule rule, FlowEntryState state,
                             long lifeSecs, long packets, long bytes) {
-        this(rule, state, lifeSecs, TimeUnit.SECONDS, packets, bytes);
+        this(rule, state, lifeSecs, SECONDS, packets, bytes);
     }
 
     public DefaultFlowEntry(FlowRule rule) {
@@ -71,12 +73,12 @@ public class DefaultFlowEntry extends DefaultFlowRule
 
     @Override
     public long life() {
-        return life(TimeUnit.SECONDS);
+        return life(SECONDS);
     }
 
     @Override
     public long life(TimeUnit timeUnit) {
-        return timeUnit.convert(life, TimeUnit.NANOSECONDS);
+        return timeUnit.convert(life, NANOSECONDS);
     }
 
     @Override
@@ -111,7 +113,7 @@ public class DefaultFlowEntry extends DefaultFlowRule
 
     @Override
     public void setLife(long life) {
-        setLife(life, TimeUnit.SECONDS);
+        setLife(life, SECONDS);
     }
 
     @Override

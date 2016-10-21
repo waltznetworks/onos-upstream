@@ -15,6 +15,7 @@
  */
 package org.onosproject.store.resource.impl;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
@@ -26,9 +27,12 @@ import org.onosproject.net.resource.DiscreteResourceId;
 import org.onosproject.net.resource.Resources;
 
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 /**
  * Represents discrete resources encoded by a codec.
@@ -72,6 +76,11 @@ final class EncodedDiscreteResources {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
+    Class<?> encodedClass() {
+        Range<Integer> firstRange = rangeSet.asRanges().iterator().next();
+        return codec.decode(firstRange.lowerEndpoint()).getClass();
+    }
+
     @SuppressWarnings("unchecked")
     boolean contains(DiscreteResource resource) {
         return resource.valueAs(Object.class)
@@ -80,7 +89,51 @@ final class EncodedDiscreteResources {
                 .orElse(false);
     }
 
+    EncodedDiscreteResources difference(EncodedDiscreteResources other) {
+        checkArgument(this.codec.getClass() == other.codec.getClass());
+
+        RangeSet<Integer> newRangeSet = TreeRangeSet.create(this.rangeSet);
+        newRangeSet.removeAll(other.rangeSet);
+
+        return new EncodedDiscreteResources(newRangeSet, this.codec);
+    }
+
+    EncodedDiscreteResources add(EncodedDiscreteResources other) {
+        checkArgument(this.codec.getClass() == other.codec.getClass());
+
+        RangeSet<Integer> newRangeSet = TreeRangeSet.create(this.rangeSet);
+        newRangeSet.addAll(other.rangeSet);
+
+        return new EncodedDiscreteResources(newRangeSet, this.codec);
+    }
+
     boolean isEmpty() {
         return rangeSet.isEmpty();
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(rangeSet, codec);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null || getClass() != obj.getClass()) {
+            return false;
+        }
+        final EncodedDiscreteResources other = (EncodedDiscreteResources) obj;
+        return Objects.equals(this.rangeSet, other.rangeSet)
+                && Objects.equals(this.codec, other.codec);
+    }
+
+    @Override
+    public String toString() {
+        return MoreObjects.toStringHelper(this)
+                .add("rangeSet", rangeSet)
+                .add("codec", codec)
+                .toString();
     }
 }

@@ -46,7 +46,6 @@ import org.onosproject.net.device.PortStatistics;
 import org.onosproject.net.provider.ProviderId;
 import org.onosproject.store.AbstractStore;
 import org.onlab.packet.ChassisId;
-import org.onlab.util.NewConcurrentHashMap;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -59,11 +58,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -71,7 +72,6 @@ import static com.google.common.base.Predicates.notNull;
 import static com.google.common.base.Verify.verify;
 import static org.onosproject.net.device.DeviceEvent.Type.*;
 import static org.slf4j.LoggerFactory.getLogger;
-import static org.apache.commons.lang3.concurrent.ConcurrentUtils.createIfAbsentUnchecked;
 import static org.onosproject.net.DefaultAnnotations.union;
 import static org.onosproject.net.DefaultAnnotations.merge;
 
@@ -243,6 +243,13 @@ public class SimpleDeviceStore
         }
     }
 
+    // implement differently if desired
+    @Override
+    public boolean markOnline(DeviceId deviceId) {
+        log.warn("Mark online not supported");
+        return false;
+    }
+
     @Override
     public List<DeviceEvent> updatePorts(ProviderId providerId,
                                          DeviceId deviceId,
@@ -338,8 +345,7 @@ public class SimpleDeviceStore
     // Gets the map of ports for the specified device; if one does not already
     // exist, it creates and registers a new one.
     private ConcurrentMap<PortNumber, Port> getPortMap(DeviceId deviceId) {
-        return createIfAbsentUnchecked(devicePorts, deviceId,
-                                       NewConcurrentHashMap.<PortNumber, Port>ifNeeded());
+        return devicePorts.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>());
     }
 
     private Map<ProviderId, DeviceDescriptions> getOrCreateDeviceDescriptions(
@@ -416,6 +422,15 @@ public class SimpleDeviceStore
     }
 
     @Override
+    public Stream<PortDescription> getPortDescriptions(ProviderId providerId,
+                                                       DeviceId deviceId) {
+        return Optional.ofNullable(deviceDescs.get(deviceId))
+                .map(m -> m.get(providerId))
+                .map(descs -> descs.portDescs.values().stream())
+                .orElse(Stream.empty());
+    }
+
+    @Override
     public DeviceEvent updatePortStatistics(ProviderId providerId, DeviceId deviceId,
                                             Collection<PortStatistics> newStatsCollection) {
 
@@ -480,6 +495,16 @@ public class SimpleDeviceStore
     }
 
     @Override
+    public PortDescription getPortDescription(ProviderId providerId,
+                                              DeviceId deviceId,
+                                              PortNumber portNumber) {
+        return Optional.ofNullable(deviceDescs.get(deviceId))
+                .map(m -> m.get(providerId))
+                .map(descs -> descs.getPortDesc(portNumber))
+                .orElse(null);
+    }
+
+    @Override
     public List<PortStatistics> getPortStatistics(DeviceId deviceId) {
         Map<PortNumber, PortStatistics> portStats = devicePortStats.get(deviceId);
         if (portStats == null) {
@@ -489,12 +514,32 @@ public class SimpleDeviceStore
     }
 
     @Override
+    public PortStatistics getStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        Map<PortNumber, PortStatistics> portStatsMap = devicePortStats.get(deviceId);
+        if (portStatsMap == null) {
+            return null;
+        }
+        PortStatistics portStats = portStatsMap.get(portNumber);
+        return portStats;
+    }
+
+    @Override
     public List<PortStatistics> getPortDeltaStatistics(DeviceId deviceId) {
         Map<PortNumber, PortStatistics> portStats = devicePortDeltaStats.get(deviceId);
         if (portStats == null) {
             return Collections.emptyList();
         }
         return ImmutableList.copyOf(portStats.values());
+    }
+
+    @Override
+    public PortStatistics getDeltaStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        Map<PortNumber, PortStatistics> portStatsMap = devicePortDeltaStats.get(deviceId);
+        if (portStatsMap == null) {
+            return null;
+        }
+        PortStatistics portStats = portStatsMap.get(portNumber);
+        return portStats;
     }
 
     @Override

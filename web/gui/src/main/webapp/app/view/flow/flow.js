@@ -41,7 +41,9 @@
             $scope.portTip = 'Show port view for this device';
             $scope.groupTip = 'Show group view for this device';
             $scope.meterTip = 'Show meter view for selected device';
-
+            $scope.briefTip = 'Switch to brief view';
+            $scope.detailTip = 'Switch to detailed view';
+            $scope.brief = true;
             params = $location.search();
             if (params.hasOwnProperty('devId')) {
                 $scope.devId = params['devId'];
@@ -58,6 +60,19 @@
                     ns.navTo(path, { devId: $scope.devId });
                 }
             };
+
+            $scope.briefToggle = function () {
+                $scope.brief = !$scope.brief;
+            };
+
+            Object.defineProperty($scope, "queryFilter", {
+               get: function() {
+               var out = {};
+               out[$scope.queryBy || "$"] = $scope.query;
+               return out;
+               }
+            });
+
 
             $log.log('OvFlowCtrl has been created');
         }]);

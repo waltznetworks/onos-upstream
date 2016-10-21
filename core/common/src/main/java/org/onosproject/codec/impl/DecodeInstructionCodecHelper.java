@@ -25,6 +25,7 @@ import org.onlab.packet.MplsLabel;
 import org.onlab.packet.TpPort;
 import org.onlab.packet.VlanId;
 import org.onlab.util.HexString;
+import org.onosproject.codec.CodecContext;
 import org.onosproject.codec.ExtensionTreatmentCodec;
 import org.onosproject.core.DefaultGroupId;
 import org.onosproject.core.GroupId;
@@ -56,14 +57,16 @@ import static org.slf4j.LoggerFactory.getLogger;
 public final class DecodeInstructionCodecHelper {
     protected static final Logger log = getLogger(DecodeInstructionCodecHelper.class);
     private final ObjectNode json;
+    private final CodecContext context;
 
     /**
      * Creates a decode instruction codec object.
      *
      * @param json JSON object to decode
      */
-    public DecodeInstructionCodecHelper(ObjectNode json) {
+    public DecodeInstructionCodecHelper(ObjectNode json, CodecContext context) {
         this.json = json;
+        this.context = context;
     }
 
     /**
@@ -73,7 +76,8 @@ public final class DecodeInstructionCodecHelper {
      * @throws IllegalArgumentException if the JSON is invalid
      */
     private Instruction decodeL2() {
-        String subType = json.get(InstructionCodec.SUBTYPE).asText();
+        String subType = nullIsIllegal(json.get(InstructionCodec.SUBTYPE),
+                InstructionCodec.SUBTYPE + InstructionCodec.ERROR_MESSAGE).asText();
 
         if (subType.equals(L2ModificationInstruction.L2SubType.ETH_SRC.name())) {
             String mac = nullIsIllegal(json.get(InstructionCodec.MAC),
@@ -121,7 +125,8 @@ public final class DecodeInstructionCodecHelper {
      * @throws IllegalArgumentException if the JSON is invalid
      */
     private Instruction decodeL3() {
-        String subType = json.get(InstructionCodec.SUBTYPE).asText();
+        String subType = nullIsIllegal(json.get(InstructionCodec.SUBTYPE),
+                InstructionCodec.SUBTYPE + InstructionCodec.ERROR_MESSAGE).asText();
 
         if (subType.equals(L3ModificationInstruction.L3SubType.IPV4_SRC.name())) {
             IpAddress ip = IpAddress.valueOf(nullIsIllegal(json.get(InstructionCodec.IP),
@@ -155,7 +160,8 @@ public final class DecodeInstructionCodecHelper {
      * @throws IllegalArgumentException if the JSON is invalid
      */
     private Instruction decodeL0() {
-        String subType = json.get(InstructionCodec.SUBTYPE).asText();
+        String subType = nullIsIllegal(json.get(InstructionCodec.SUBTYPE),
+                InstructionCodec.SUBTYPE + InstructionCodec.ERROR_MESSAGE).asText();
 
         if (subType.equals(L0ModificationInstruction.L0SubType.OCH.name())) {
             String gridTypeString = nullIsIllegal(json.get(InstructionCodec.GRID_TYPE),
@@ -190,7 +196,8 @@ public final class DecodeInstructionCodecHelper {
      * @throws IllegalArgumentException if the JSON is invalid
      */
     private Instruction decodeL1() {
-        String subType = json.get(InstructionCodec.SUBTYPE).asText();
+        String subType = nullIsIllegal(json.get(InstructionCodec.SUBTYPE),
+                InstructionCodec.SUBTYPE + InstructionCodec.ERROR_MESSAGE).asText();
         if (subType.equals(L1ModificationInstruction.L1SubType.ODU_SIGID.name())) {
             int tributaryPortNumber = nullIsIllegal(json.get(InstructionCodec.TRIBUTARY_PORT_NUMBER),
                     InstructionCodec.TRIBUTARY_PORT_NUMBER + InstructionCodec.MISSING_MEMBER_MESSAGE).asInt();
@@ -214,7 +221,8 @@ public final class DecodeInstructionCodecHelper {
      * @throws IllegalArgumentException if the JSON is invalid
      */
     private Instruction decodeL4() {
-        String subType = json.get(InstructionCodec.SUBTYPE).asText();
+        String subType = nullIsIllegal(json.get(InstructionCodec.SUBTYPE),
+                InstructionCodec.SUBTYPE + InstructionCodec.ERROR_MESSAGE).asText();
 
         if (subType.equals(L4ModificationInstruction.L4SubType.TCP_DST.name())) {
             TpPort tcpPort = TpPort.tpPort(nullIsIllegal(json.get(InstructionCodec.TCP_PORT),
@@ -251,12 +259,17 @@ public final class DecodeInstructionCodecHelper {
             DeviceService deviceService = serviceDirectory.get(DeviceService.class);
             Device device = deviceService.getDevice(deviceId);
 
+            if (device == null) {
+                throw new IllegalArgumentException("Device not found");
+            }
+
             if (device.is(ExtensionTreatmentCodec.class)) {
                 ExtensionTreatmentCodec treatmentCodec = device.as(ExtensionTreatmentCodec.class);
-                ExtensionTreatment treatment = treatmentCodec.decode(node, null);
+                ExtensionTreatment treatment = treatmentCodec.decode(node, context);
                 return Instructions.extension(treatment, deviceId);
             } else {
-                log.warn("There is no codec to decode extension for device {}", deviceId.toString());
+                throw new IllegalArgumentException(
+                        "There is no codec to decode extension for device " + deviceId.toString());
             }
         }
         return null;
@@ -284,19 +297,15 @@ public final class DecodeInstructionCodecHelper {
      */
     private PortNumber getPortNumber(ObjectNode jsonNode) {
         PortNumber portNumber;
-        if (jsonNode.get(InstructionCodec.PORT).isLong() || jsonNode.get(InstructionCodec.PORT).isInt()) {
-            portNumber = PortNumber
-                    .portNumber(nullIsIllegal(jsonNode.get(InstructionCodec.PORT)
-                            .asLong(), InstructionCodec.PORT
-                            + InstructionCodec.MISSING_MEMBER_MESSAGE));
-        } else if (jsonNode.get(InstructionCodec.PORT).isTextual()) {
-            portNumber = PortNumber
-                    .fromString(nullIsIllegal(jsonNode.get(InstructionCodec.PORT)
-                            .textValue(), InstructionCodec.PORT
-                            + InstructionCodec.MISSING_MEMBER_MESSAGE));
+        JsonNode portNode = nullIsIllegal(jsonNode.get(InstructionCodec.PORT),
+                InstructionCodec.PORT + InstructionCodec.ERROR_MESSAGE);
+        if (portNode.isLong() || portNode.isInt()) {
+            portNumber = PortNumber.portNumber(portNode.asLong());
+        } else if (portNode.isTextual()) {
+            portNumber = PortNumber.fromString(portNode.textValue());
         } else {
             throw new IllegalArgumentException("Port value "
-                    + jsonNode.get(InstructionCodec.PORT).toString()
+                    + portNode.toString()
                     + " is not supported");
         }
         return portNumber;
@@ -309,26 +318,27 @@ public final class DecodeInstructionCodecHelper {
      * @throws IllegalArgumentException if the JSON is invalid
      */
     public Instruction decode() {
-        String type = json.get(InstructionCodec.TYPE).asText();
+        String type = nullIsIllegal(json.get(InstructionCodec.TYPE),
+                InstructionCodec.TYPE + InstructionCodec.ERROR_MESSAGE).asText();
 
         if (type.equals(Instruction.Type.OUTPUT.name())) {
             return Instructions.createOutput(getPortNumber(json));
         } else if (type.equals(Instruction.Type.NOACTION.name())) {
             return Instructions.createNoAction();
         } else if (type.equals(Instruction.Type.TABLE.name())) {
-            return Instructions.transition(nullIsIllegal(json.get(InstructionCodec.TABLE_ID)
-                    .asInt(), InstructionCodec.TABLE_ID + InstructionCodec.MISSING_MEMBER_MESSAGE));
+            return Instructions.transition(nullIsIllegal(json.get(InstructionCodec.TABLE_ID),
+                    InstructionCodec.TABLE_ID + InstructionCodec.MISSING_MEMBER_MESSAGE).asInt());
         } else if (type.equals(Instruction.Type.GROUP.name())) {
-            GroupId groupId = new DefaultGroupId(nullIsIllegal(json.get(InstructionCodec.GROUP_ID)
-                    .asInt(), InstructionCodec.GROUP_ID + InstructionCodec.MISSING_MEMBER_MESSAGE));
+            GroupId groupId = new DefaultGroupId(nullIsIllegal(json.get(InstructionCodec.GROUP_ID),
+                    InstructionCodec.GROUP_ID + InstructionCodec.MISSING_MEMBER_MESSAGE).asInt());
             return Instructions.createGroup(groupId);
         } else if (type.equals(Instruction.Type.METER.name())) {
-            MeterId meterId = MeterId.meterId(nullIsIllegal(json.get(InstructionCodec.METER_ID)
-                    .asLong(), InstructionCodec.METER_ID + InstructionCodec.MISSING_MEMBER_MESSAGE));
+            MeterId meterId = MeterId.meterId(nullIsIllegal(json.get(InstructionCodec.METER_ID),
+                    InstructionCodec.METER_ID + InstructionCodec.MISSING_MEMBER_MESSAGE).asLong());
             return Instructions.meterTraffic(meterId);
         } else if (type.equals(Instruction.Type.QUEUE.name())) {
-            long queueId = nullIsIllegal(json.get(InstructionCodec.QUEUE_ID)
-                    .asLong(), InstructionCodec.QUEUE_ID + InstructionCodec.MISSING_MEMBER_MESSAGE);
+            long queueId = nullIsIllegal(json.get(InstructionCodec.QUEUE_ID),
+                    InstructionCodec.QUEUE_ID + InstructionCodec.MISSING_MEMBER_MESSAGE).asLong();
             return Instructions.setQueue(queueId, getPortNumber(json));
         } else if (type.equals(Instruction.Type.L0MODIFICATION.name())) {
             return decodeL0();

@@ -16,6 +16,7 @@
 package org.onosproject.vpls;
 
 import com.google.common.collect.SetMultimap;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.onlab.packet.MacAddress;
 import org.onlab.packet.VlanId;
@@ -36,7 +37,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -74,7 +74,7 @@ public class IntentInstaller {
 
     /**
      * Formats the requests for creating and submit intents.
-     * Single Points to Multi Point intents are created for all the conigured
+     * Single Points to Multi Point intents are created for all the configured
      * Connect Points. Multi Point to Single Point intents are created for
      * Connect Points configured that have hosts attached.
      *
@@ -83,45 +83,42 @@ public class IntentInstaller {
      */
     protected void installIntents(SetMultimap<VlanId,
             Pair<ConnectPoint,
-                                MacAddress>> confHostPresentCPoint) {
+                    MacAddress>> confHostPresentCPoint) {
         List<Intent> intents = new ArrayList<>();
 
-        confHostPresentCPoint.asMap().keySet()
+        confHostPresentCPoint.keySet()
+                .stream()
+                .filter(vlanId -> confHostPresentCPoint.get(vlanId) != null)
                 .forEach(vlanId -> {
-                    List<Pair<ConnectPoint, MacAddress>> cPoints =
-                            confHostPresentCPoint.get(vlanId).stream().collect(Collectors.toList());
+                    Set<Pair<ConnectPoint, MacAddress>> cPoints =
+                            confHostPresentCPoint.get(vlanId);
+                    cPoints.forEach(cPoint -> {
+                        MacAddress mac = cPoint.getValue();
+                        ConnectPoint src = cPoint.getKey();
+                        Set<ConnectPoint> dsts = cPoints.stream()
+                                .map(Pair::getKey)
+                                .filter(cp -> !cp.equals(src))
+                                .collect(Collectors.toSet());
+                        Key brcKey = buildKey(PREFIX_BROADCAST, src, vlanId);
 
-                    if (cPoints != null && !cPoints.isEmpty()) {
-                        for (int i = 0; i < cPoints.size(); i++) {
-                            ConnectPoint src = cPoints.get(i).getKey();
-                            Set<ConnectPoint> dsts = new HashSet<>();
-                            MacAddress mac = cPoints.get(i).getValue();
-                            for (int j = 0; j < cPoints.size(); j++) {
-                                ConnectPoint dst = cPoints.get(j).getKey();
-                                if (!dst.equals(src)) {
-                                    dsts.add(dst);
-                                }
-                            }
-                            Key brcKey = buildKey(PREFIX_BROADCAST, src, vlanId);
-                            if (intentService.getIntent(brcKey) == null) {
-                                SinglePointToMultiPointIntent brcIntent =
-                                        buildBrcIntent(brcKey, src, dsts, vlanId);
-                                intents.add(brcIntent);
-                            }
-                            if (mac != null && countMacInCPoints(cPoints) > 1) {
-                                Key uniKey = buildKey(PREFIX_UNICAST, src, vlanId);
-                                if (intentService.getIntent(uniKey) == null) {
-                                    MultiPointToSinglePointIntent uniIntent =
-                                            buildUniIntent(uniKey,
-                                                           dsts,
-                                                           src,
-                                                           vlanId,
-                                                           mac);
-                                    intents.add(uniIntent);
-                                }
+                        if (intentService.getIntent(brcKey) == null && dsts.size() > 0) {
+                            intents.add(buildBrcIntent(brcKey, src, dsts, vlanId));
+                        }
+
+                        if (mac != null && countMacInCPoints(cPoints) > 1 &&
+                                dsts.size() > 0) {
+                            Key uniKey = buildKey(PREFIX_UNICAST, src, vlanId);
+                            if (intentService.getIntent(uniKey) == null) {
+                                MultiPointToSinglePointIntent uniIntent =
+                                        buildUniIntent(uniKey,
+                                                       dsts,
+                                                       src,
+                                                       vlanId,
+                                                       mac);
+                                intents.add(uniIntent);
                             }
                         }
-                    }
+                    });
                 });
         submitIntents(intents);
     }
@@ -132,11 +129,10 @@ public class IntentInstaller {
      * @param intents intents to be submitted
      */
     private void submitIntents(Collection<Intent> intents) {
-        log.debug("Submitting intents to the IntentSynchronizer");
-
-        for (Intent intent : intents) {
+        log.debug("Submitting intents to the Intent Synchronizer");
+        intents.forEach(intent -> {
             intentSynchronizer.submit(intent);
-        }
+        });
     }
 
     /**
@@ -239,18 +235,12 @@ public class IntentInstaller {
      * Counts the number of mac addresses associated to a specific list of
      * ConnectPoint.
      *
-     * @param cPoints List of ConnectPoints, eventually binded to the MAC of the
+     * @param cPoints Set of ConnectPoints, eventually bound to the MAC of the
      *                host attached
      * @return number of mac addresses found.
      */
-    private int countMacInCPoints(List<Pair<ConnectPoint, MacAddress>> cPoints) {
-        int macFound = 0;
-        for (Pair<ConnectPoint, MacAddress> p : cPoints) {
-            if (p.getValue() != null) {
-                macFound++;
-            }
-        }
-        return macFound;
+    private int countMacInCPoints(Set<Pair<ConnectPoint, MacAddress>> cPoints) {
+        return (int) cPoints.stream().filter(p -> p.getValue() != null).count();
     }
 
 }

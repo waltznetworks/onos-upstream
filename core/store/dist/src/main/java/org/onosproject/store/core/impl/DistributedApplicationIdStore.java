@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-present Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ import com.google.common.collect.Maps;
  * ApplicationIdStore implementation on top of {@code AtomicCounter}
  * and {@code ConsistentMap} primitives.
  */
-@Component(immediate = true, enabled = true)
+@Component(immediate = true)
 @Service
 public class DistributedApplicationIdStore implements ApplicationIdStore {
 

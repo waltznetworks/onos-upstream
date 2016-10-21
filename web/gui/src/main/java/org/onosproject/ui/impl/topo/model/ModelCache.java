@@ -1,5 +1,5 @@
 /*
- *  Copyright 2016 Open Networking Laboratory
+ *  Copyright 2016-present Open Networking Laboratory
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,18 +29,25 @@ import org.onosproject.net.HostLocation;
 import org.onosproject.net.Link;
 import org.onosproject.net.region.Region;
 import org.onosproject.net.region.RegionId;
+import org.onosproject.ui.UiTopoLayoutService;
 import org.onosproject.ui.model.ServiceBundle;
 import org.onosproject.ui.model.topo.UiClusterMember;
 import org.onosproject.ui.model.topo.UiDevice;
+import org.onosproject.ui.model.topo.UiDeviceLink;
+import org.onosproject.ui.model.topo.UiEdgeLink;
 import org.onosproject.ui.model.topo.UiElement;
 import org.onosproject.ui.model.topo.UiHost;
-import org.onosproject.ui.model.topo.UiLink;
 import org.onosproject.ui.model.topo.UiLinkId;
 import org.onosproject.ui.model.topo.UiRegion;
+import org.onosproject.ui.model.topo.UiSynthLink;
+import org.onosproject.ui.model.topo.UiTopoLayout;
+import org.onosproject.ui.model.topo.UiTopoLayoutId;
 import org.onosproject.ui.model.topo.UiTopology;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import static org.onosproject.net.DefaultEdgeLink.createEdgeLink;
@@ -96,7 +103,7 @@ class ModelCache {
         loadClusterMembers();
         loadRegions();
         loadDevices();
-        loadLinks();
+        loadDeviceLinks();
         loadHosts();
     }
 
@@ -153,6 +160,10 @@ class ModelCache {
         }
     }
 
+    List<UiClusterMember> getAllClusterMembers() {
+        return uiTopology.allClusterMembers();
+    }
+
 
     // === MASTERSHIP CHANGES
 
@@ -164,18 +175,66 @@ class ModelCache {
         // TODO: post event
     }
 
+    // === THE NULL REGION
+
+    UiRegion nullRegion() {
+        return uiTopology.nullRegion();
+    }
 
     // === REGIONS
 
     private UiRegion addNewRegion(Region r) {
         UiRegion region = new UiRegion(uiTopology, r);
         uiTopology.add(region);
+        log.debug("Region {} added to topology", region);
         return region;
     }
 
     private void updateRegion(UiRegion region) {
-        Set<DeviceId> devs = services.region().getRegionDevices(region.id());
-        region.reconcileDevices(devs);
+        RegionId rid = region.id();
+        Set<DeviceId> deviceIds = services.region().getRegionDevices(rid);
+
+        // Make sure device objects refer to their region
+        deviceIds.forEach(d -> {
+            UiDevice dev = uiTopology.findDevice(d);
+            if (dev != null) {
+                dev.setRegionId(rid);
+            } else {
+                // if we don't have the UiDevice in the topology, what can we do?
+                log.warn("Region device {}, but we don't have UiDevice in topology", d);
+            }
+        });
+
+        // Make sure the region object refers to the devices
+        region.reconcileDevices(deviceIds);
+
+        fixupContainmentHierarchy(region);
+    }
+
+    private void fixupContainmentHierarchy(UiRegion region) {
+        UiTopoLayoutService ls = services.layout();
+        RegionId regionId = region.id();
+
+        UiTopoLayout layout = ls.getLayout(regionId);
+        if (layout == null) {
+            // no layout backed by this region
+            log.warn("No layout backed by region {}", regionId);
+            return;
+        }
+
+        UiTopoLayoutId layoutId = layout.id();
+
+        if (!layout.isRoot()) {
+            UiTopoLayoutId parentId = layout.parent();
+            UiTopoLayout parentLayout = ls.getLayout(parentId);
+            RegionId parentRegionId = parentLayout.regionId();
+            region.setParent(parentRegionId);
+        }
+
+        Set<UiTopoLayout> kids = ls.getChildren(layoutId);
+        Set<RegionId> kidRegionIds = new HashSet<>(kids.size());
+        kids.forEach(k -> kidRegionIds.add(k.regionId()));
+        region.setChildren(kidRegionIds);
     }
 
     private void loadRegions() {
@@ -199,7 +258,7 @@ class ModelCache {
 
     // package private for unit test access
     UiRegion accessRegion(RegionId id) {
-        return uiTopology.findRegion(id);
+        return id == null ? null : uiTopology.findRegion(id);
     }
 
     // invoked from UiSharedTopologyModel region listener
@@ -214,26 +273,31 @@ class ModelCache {
         }
     }
 
+    Set<UiRegion> getAllRegions() {
+        return uiTopology.allRegions();
+    }
+
 
     // === DEVICES
 
     private UiDevice addNewDevice(Device d) {
         UiDevice device = new UiDevice(uiTopology, d);
+        updateDevice(device);
         uiTopology.add(device);
+        log.debug("Device {} added to topology", device);
         return device;
     }
 
+    // make sure the UiDevice is tagged with the region it belongs to
     private void updateDevice(UiDevice device) {
-        Region regionForDevice = services.region().getRegionForDevice(device.id());
-        if (regionForDevice != null) {
-            device.setRegionId(regionForDevice.id());
-        }
+        Region r = services.region().getRegionForDevice(device.id());
+        RegionId rid = r == null ? UiRegion.NULL_ID : r.id();
+        device.setRegionId(rid);
     }
 
     private void loadDevices() {
         for (Device d : services.device().getDevices()) {
-            UiDevice device = addNewDevice(d);
-            updateDevice(device);
+            addNewDevice(d);
         }
     }
 
@@ -243,8 +307,9 @@ class ModelCache {
         UiDevice uiDevice = uiTopology.findDevice(id);
         if (uiDevice == null) {
             uiDevice = addNewDevice(device);
+        } else {
+            updateDevice(uiDevice);
         }
-        updateDevice(uiDevice);
 
         postEvent(DEVICE_ADDED_OR_UPDATED, uiDevice);
     }
@@ -266,65 +331,78 @@ class ModelCache {
         }
     }
 
-
-    // === LINKS
-
-    private UiLink addNewLink(UiLinkId id) {
-        UiLink uiLink = new UiLink(uiTopology, id);
-        uiTopology.add(uiLink);
-        return uiLink;
+    Set<UiDevice> getAllDevices() {
+        return uiTopology.allDevices();
     }
 
-    private void updateLink(UiLink uiLink, Link link) {
-        uiLink.attachBackingLink(link);
+
+    // === LINKS ===
+
+    private UiDeviceLink addNewDeviceLink(UiLinkId id) {
+        UiDeviceLink uiDeviceLink = new UiDeviceLink(uiTopology, id);
+        uiTopology.add(uiDeviceLink);
+        return uiDeviceLink;
     }
 
-    private void loadLinks() {
+    private UiEdgeLink addNewEdgeLink(UiLinkId id) {
+        UiEdgeLink uiEdgeLink = new UiEdgeLink(uiTopology, id);
+        uiTopology.add(uiEdgeLink);
+        return uiEdgeLink;
+    }
+
+    private void updateDeviceLink(UiDeviceLink uiDeviceLink, Link link) {
+        uiDeviceLink.attachBackingLink(link);
+    }
+
+    private void loadDeviceLinks() {
         for (Link link : services.link().getLinks()) {
             UiLinkId id = uiLinkId(link);
 
-            UiLink uiLink = uiTopology.findLink(id);
-            if (uiLink == null) {
-                uiLink = addNewLink(id);
+            UiDeviceLink uiDeviceLink = uiTopology.findDeviceLink(id);
+            if (uiDeviceLink == null) {
+                uiDeviceLink = addNewDeviceLink(id);
             }
-            updateLink(uiLink, link);
+            updateDeviceLink(uiDeviceLink, link);
         }
     }
 
     // invoked from UiSharedTopologyModel link listener
-    void addOrUpdateLink(Link link) {
+    void addOrUpdateDeviceLink(Link link) {
         UiLinkId id = uiLinkId(link);
-        UiLink uiLink = uiTopology.findLink(id);
-        if (uiLink == null) {
-            uiLink = addNewLink(id);
+        UiDeviceLink uiDeviceLink = uiTopology.findDeviceLink(id);
+        if (uiDeviceLink == null) {
+            uiDeviceLink = addNewDeviceLink(id);
         }
-        updateLink(uiLink, link);
+        updateDeviceLink(uiDeviceLink, link);
 
-        postEvent(LINK_ADDED_OR_UPDATED, uiLink);
+        postEvent(LINK_ADDED_OR_UPDATED, uiDeviceLink);
     }
 
     // package private for unit test access
-    UiLink accessLink(UiLinkId id) {
-        return uiTopology.findLink(id);
+    UiDeviceLink accessDeviceLink(UiLinkId id) {
+        return uiTopology.findDeviceLink(id);
     }
 
     // invoked from UiSharedTopologyModel link listener
-    void removeLink(Link link) {
+    void removeDeviceLink(Link link) {
         UiLinkId id = uiLinkId(link);
-        UiLink uiLink = uiTopology.findLink(id);
-        if (uiLink != null) {
-            boolean remaining = uiLink.detachBackingLink(link);
+        UiDeviceLink uiDeviceLink = uiTopology.findDeviceLink(id);
+        if (uiDeviceLink != null) {
+            boolean remaining = uiDeviceLink.detachBackingLink(link);
             if (remaining) {
-                postEvent(LINK_ADDED_OR_UPDATED, uiLink);
+                postEvent(LINK_ADDED_OR_UPDATED, uiDeviceLink);
             } else {
-                uiTopology.remove(uiLink);
-                postEvent(LINK_REMOVED, uiLink);
+                uiTopology.remove(uiDeviceLink);
+                postEvent(LINK_REMOVED, uiDeviceLink);
             }
         } else {
-            log.warn(E_NO_ELEMENT, "link", id);
+            log.warn(E_NO_ELEMENT, "Device link", id);
         }
     }
 
+    Set<UiDeviceLink> getAllDeviceLinks() {
+        return uiTopology.allDeviceLinks();
+    }
 
     // === HOSTS
 
@@ -341,20 +419,19 @@ class ModelCache {
         host.setEdgeLinkId(elinkId);
 
         // add synthesized edge link to the topology
-        UiLink edgeLink = addNewLink(elinkId);
+        UiEdgeLink edgeLink = addNewEdgeLink(elinkId);
         edgeLink.attachEdgeLink(elink);
 
         return host;
     }
 
-    private void insertNewUiLink(UiLinkId id, EdgeLink e) {
-        UiLink newEdgeLink = addNewLink(id);
+    private void insertNewUiEdgeLink(UiLinkId id, EdgeLink e) {
+        UiEdgeLink newEdgeLink = addNewEdgeLink(id);
         newEdgeLink.attachEdgeLink(e);
-
     }
 
     private void updateHost(UiHost uiHost, Host h) {
-        UiLink existing = uiTopology.findLink(uiHost.edgeLinkId());
+        UiEdgeLink existing = uiTopology.findEdgeLink(uiHost.edgeLinkId());
 
         EdgeLink currentElink = synthesizeLink(h);
         UiLinkId currentElinkId = uiLinkId(currentElink);
@@ -362,7 +439,7 @@ class ModelCache {
         if (existing != null) {
             if (!currentElinkId.equals(existing.id())) {
                 // edge link has changed
-                insertNewUiLink(currentElinkId, currentElink);
+                insertNewUiEdgeLink(currentElinkId, currentElink);
                 uiHost.setEdgeLinkId(currentElinkId);
 
                 uiTopology.remove(existing);
@@ -370,7 +447,7 @@ class ModelCache {
 
         } else {
             // no previously existing edge link
-            insertNewUiLink(currentElinkId, currentElink);
+            insertNewUiEdgeLink(currentElinkId, currentElink);
             uiHost.setEdgeLinkId(currentElinkId);
 
         }
@@ -419,13 +496,69 @@ class ModelCache {
         HostId id = host.id();
         UiHost uiHost = uiTopology.findHost(id);
         if (uiHost != null) {
-            UiLink edgeLink = uiTopology.findLink(uiHost.edgeLinkId());
+            UiEdgeLink edgeLink = uiTopology.findEdgeLink(uiHost.edgeLinkId());
             uiTopology.remove(edgeLink);
             uiTopology.remove(uiHost);
             postEvent(HOST_REMOVED, uiHost);
         } else {
             log.warn(E_NO_ELEMENT, "host", id);
         }
+    }
+
+    Set<UiHost> getAllHosts() {
+        return uiTopology.allHosts();
+    }
+
+
+    // === SYNTHETIC LINKS
+
+    List<UiSynthLink> getSynthLinks(RegionId regionId) {
+        return uiTopology.findSynthLinks(regionId);
+    }
+
+    /**
+     * Refreshes the internal state.
+     */
+    public void refresh() {
+        // fix up internal linkages to ensure they are correct
+
+        // make sure regions reflect layout containment hierarchy
+        fixupContainmentHierarchy(uiTopology.nullRegion());
+        uiTopology.allRegions().forEach(this::fixupContainmentHierarchy);
+
+        // make sure devices are in the correct region
+        Set<UiDevice> allDevices = uiTopology.allDevices();
+
+        services.region().getRegions().forEach(r -> {
+            RegionId rid = r.id();
+            UiRegion region = uiTopology.findRegion(rid);
+            if (region != null) {
+                Set<DeviceId> deviceIds = services.region().getRegionDevices(rid);
+                region.reconcileDevices(deviceIds);
+
+                deviceIds.forEach(devId -> {
+                    UiDevice dev = uiTopology.findDevice(devId);
+                    if (dev != null) {
+                        dev.setRegionId(r.id());
+                        allDevices.remove(dev);
+                    } else {
+                        log.warn("Region device ID {} but no UiDevice in topology",
+                                devId);
+                    }
+                });
+            } else {
+                log.warn("No UiRegion in topology for ID {}", rid);
+            }
+        });
+
+        // what is left over, must belong to the null-region
+        Set<DeviceId> leftOver = new HashSet<>(allDevices.size());
+        allDevices.forEach(d -> leftOver.add(d.id()));
+        uiTopology.nullRegion().reconcileDevices(leftOver);
+
+        // now that we have correct region hierarchy, and devices are in their
+        //  respective regions, we can compute synthetic links for each region.
+        uiTopology.computeSynthLinks();
     }
 
 
@@ -468,12 +601,21 @@ class ModelCache {
     }
 
     /**
-     * Returns the number of links in the topology.
+     * Returns the number of device links in the topology.
      *
-     * @return number of links
+     * @return number of device links
      */
-    public int linkCount() {
-        return uiTopology.linkCount();
+    public int deviceLinkCount() {
+        return uiTopology.deviceLinkCount();
+    }
+
+    /**
+     * Returns the number of edge links in the topology.
+     *
+     * @return number of edge links
+     */
+    public int edgeLinkCount() {
+        return uiTopology.edgeLinkCount();
     }
 
     /**
@@ -483,5 +625,14 @@ class ModelCache {
      */
     public int hostCount() {
         return uiTopology.hostCount();
+    }
+
+    /**
+     * Returns the number of synthetic links in the topology.
+     *
+     * @return the number of synthetic links
+     */
+    public int synthLinkCount() {
+        return uiTopology.synthLinkCount();
     }
 }

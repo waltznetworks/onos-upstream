@@ -32,6 +32,7 @@ import org.onlab.packet.IpPrefix;
 import org.onlab.packet.MacAddress;
 import org.onlab.packet.VlanId;
 import org.onlab.util.Tools;
+import org.onosproject.app.ApplicationService;
 import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
@@ -88,6 +89,7 @@ import java.util.stream.Collectors;
 public class SingleSwitchFibInstaller {
 
     private final Logger log = LoggerFactory.getLogger(getClass());
+    private static final String APP_NAME = "org.onosproject.vrouter";
 
     private static final int PRIORITY_OFFSET = 100;
     private static final int PRIORITY_MULTIPLIER = 5;
@@ -118,6 +120,9 @@ public class SingleSwitchFibInstaller {
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected DeviceService deviceService;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected ApplicationService applicationService;
+
     @Property(name = "routeToNextHop", boolValue = false,
             label = "Install a /32 route to each next hop")
     private boolean routeToNextHop = false;
@@ -131,6 +136,7 @@ public class SingleSwitchFibInstaller {
 
     private ApplicationId coreAppId;
     private ApplicationId routerAppId;
+    private ApplicationId vrouterAppId;
 
     // Reference count for how many times a next hop is used by a route
     private final Multiset<IpAddress> nextHopsCount = ConcurrentHashMultiset.create();
@@ -162,6 +168,7 @@ public class SingleSwitchFibInstaller {
 
         coreAppId = coreService.registerApplication(CoreService.CORE_APP_NAME);
         routerAppId = coreService.registerApplication(RoutingService.ROUTER_APP_ID);
+        vrouterAppId = coreService.registerApplication(APP_NAME);
 
         networkConfigRegistry.registerConfigFactory(mcastConfigFactory);
 
@@ -170,6 +177,8 @@ public class SingleSwitchFibInstaller {
         interfaceService.addListener(internalInterfaceList);
 
         updateConfig();
+
+        applicationService.registerDeactivateHook(vrouterAppId, () -> cleanUp());
 
         log.info("Started");
     }
@@ -180,8 +189,6 @@ public class SingleSwitchFibInstaller {
         deviceService.removeListener(deviceListener);
         interfaceService.removeListener(internalInterfaceList);
         networkConfigService.removeListener(configListener);
-
-        //processIntfFilters(false, configService.getInterfaces()); //TODO necessary?
 
         componentConfigService.unregisterProperties(getClass(), false);
 
@@ -199,6 +206,23 @@ public class SingleSwitchFibInstaller {
         routeToNextHop = Boolean.parseBoolean(strRouteToNextHop);
 
         log.info("routeToNextHop set to {}", routeToNextHop);
+    }
+
+    //remove filtering objectives and routes before deactivate.
+    private void cleanUp() {
+        //remove the route listener
+        routeService.removeListener(routeListener);
+
+        //clean up the routes.
+        for (Map.Entry<IpPrefix, IpAddress> routes: prefixToNextHop.entrySet()) {
+            deleteRoute(new ResolvedRoute(routes.getKey(), null, null));
+        }
+
+        //clean up the filtering objective for interfaces.
+        Set<Interface> intfs = getInterfaces();
+        if (!intfs.isEmpty()) {
+            processIntfFilters(false, intfs);
+        }
     }
 
     private void updateConfig() {
@@ -219,26 +243,60 @@ public class SingleSwitchFibInstaller {
         log.info("Using interfaces: {}", interfaces.isEmpty() ? "all" : interfaces);
 
         routeService.addListener(routeListener);
-
         updateDevice();
+    }
+
+    //remove the filtering objective for interfaces which are no longer part of vRouter config.
+    private void removeFilteringObjectives(NetworkConfigEvent event) {
+        RouterConfig prevRouterConfig = (RouterConfig) event.prevConfig().get();
+        List<String> prevInterfaces = prevRouterConfig.getInterfaces();
+
+        Set<Interface> previntfs = filterInterfaces(prevInterfaces);
+        //if previous interface list is empty it means filtering objectives are
+        //installed for all the interfaces.
+        if (previntfs.isEmpty() && !interfaces.isEmpty()) {
+            Set<Interface> allIntfs = interfaceService.getInterfaces();
+            for (Interface allIntf : allIntfs) {
+                if (!interfaces.contains(allIntf.name())) {
+                    processIntfFilter(false, allIntf);
+                }
+            }
+            return;
+        }
+
+        //remove the filtering objective for the interfaces which are not
+        //part of updated interfaces list.
+        for (Interface prevIntf : previntfs) {
+            if (!interfaces.contains(prevIntf.name())) {
+                processIntfFilter(false, prevIntf);
+            }
+        }
     }
 
     private void updateDevice() {
         if (deviceId != null && deviceService.isAvailable(deviceId)) {
-
-            Set<Interface> intfs;
-            if (interfaces.isEmpty()) {
-                intfs = interfaceService.getInterfaces();
-            } else {
-                // TODO need to fix by making interface names globally unique
-                intfs = interfaceService.getInterfaces().stream()
-                        .filter(intf -> intf.connectPoint().deviceId().equals(deviceId))
-                        .filter(intf -> interfaces.contains(intf.name()))
-                        .collect(Collectors.toSet());
-            }
-
+            Set<Interface> intfs = getInterfaces();
             processIntfFilters(true, intfs);
         }
+    }
+
+    private Set<Interface> getInterfaces() {
+        Set<Interface> intfs;
+        if (interfaces.isEmpty()) {
+            intfs = interfaceService.getInterfaces();
+        } else {
+            // TODO need to fix by making interface names globally unique
+            intfs = filterInterfaces(interfaces);
+        }
+        return intfs;
+    }
+
+    private Set<Interface> filterInterfaces(List<String> interfaces) {
+        Set<Interface> intfs = interfaceService.getInterfaces().stream()
+                .filter(intf -> intf.connectPoint().deviceId().equals(deviceId))
+                .filter(intf -> interfaces.contains(intf.name()))
+                .collect(Collectors.toSet());
+        return intfs;
     }
 
     private void updateRoute(ResolvedRoute route) {
@@ -399,6 +457,9 @@ public class SingleSwitchFibInstaller {
             // Ignore interfaces if they are not on the router switch
             return;
         }
+        if (!interfaces.contains(intf.name()) && install) {
+            return;
+        }
 
         createFilteringObjective(install, intf);
         createMcastFilteringObjective(install, intf);
@@ -536,10 +597,17 @@ public class SingleSwitchFibInstaller {
                 case CONFIG_ADDED:
                 case CONFIG_UPDATED:
                     updateConfig();
+                    if (event.prevConfig().isPresent()) {
+                        removeFilteringObjectives(event);
+                    }
                     break;
                 case CONFIG_REGISTERED:
+                    break;
                 case CONFIG_UNREGISTERED:
+                    break;
                 case CONFIG_REMOVED:
+                    cleanUp();
+                    break;
                 default:
                     break;
                 }

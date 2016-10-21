@@ -19,16 +19,24 @@ package org.onosproject.ui.model.topo;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.HostId;
+import org.onosproject.net.PortNumber;
 import org.onosproject.net.region.RegionId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
+import static org.onosproject.ui.model.topo.UiLinkId.uiLinkId;
 
 /**
  * Represents the overall network topology.
@@ -46,13 +54,23 @@ public class UiTopology extends UiElement {
 
     private static final Logger log = LoggerFactory.getLogger(UiTopology.class);
 
+    private static final Comparator<UiClusterMember> CLUSTER_MEMBER_COMPARATOR =
+            (o1, o2) -> o1.idAsString().compareTo(o2.idAsString());
+
 
     // top level mappings of topology elements by ID
     private final Map<NodeId, UiClusterMember> cnodeLookup = new HashMap<>();
     private final Map<RegionId, UiRegion> regionLookup = new HashMap<>();
     private final Map<DeviceId, UiDevice> deviceLookup = new HashMap<>();
     private final Map<HostId, UiHost> hostLookup = new HashMap<>();
-    private final Map<UiLinkId, UiLink> linkLookup = new HashMap<>();
+    private final Map<UiLinkId, UiDeviceLink> devLinkLookup = new HashMap<>();
+    private final Map<UiLinkId, UiEdgeLink> edgeLinkLookup = new HashMap<>();
+
+    // a cache of the computed synthetic links
+    private final List<UiSynthLink> synthLinks = new ArrayList<>();
+
+    // a container for devices, hosts, etc. belonging to no region
+    private final UiRegion nullRegion = new UiRegion(this, null);
 
 
     @Override
@@ -62,7 +80,9 @@ public class UiTopology extends UiElement {
                 .add("#regions", regionCount())
                 .add("#devices", deviceLookup.size())
                 .add("#hosts", hostLookup.size())
-                .add("#links", linkLookup.size())
+                .add("#dev-links", devLinkLookup.size())
+                .add("#edge-links", edgeLinkLookup.size())
+                .add("#synth-links", synthLinks.size())
                 .toString();
     }
 
@@ -81,7 +101,24 @@ public class UiTopology extends UiElement {
         regionLookup.clear();
         deviceLookup.clear();
         hostLookup.clear();
-        linkLookup.clear();
+        devLinkLookup.clear();
+        edgeLinkLookup.clear();
+
+        synthLinks.clear();
+
+        nullRegion.destroy();
+    }
+
+
+    /**
+     * Returns all the cluster members, sorted by their ID.
+     *
+     * @return all cluster members
+     */
+    public List<UiClusterMember> allClusterMembers() {
+        List<UiClusterMember> members = new ArrayList<>(cnodeLookup.values());
+        Collections.sort(members, CLUSTER_MEMBER_COMPARATOR);
+        return members;
     }
 
     /**
@@ -125,6 +162,27 @@ public class UiTopology extends UiElement {
         return cnodeLookup.size();
     }
 
+
+    /**
+     * Returns all regions in the model (except the
+     * {@link #nullRegion() null region}).
+     *
+     * @return all regions
+     */
+    public Set<UiRegion> allRegions() {
+        return new HashSet<>(regionLookup.values());
+    }
+
+    /**
+     * Returns a reference to the null-region. That is, the container for
+     * devices, hosts, and links that belong to no region.
+     *
+     * @return the null-region
+     */
+    public UiRegion nullRegion() {
+        return nullRegion;
+    }
+
     /**
      * Returns the region with the specified identifier, or null if
      * no such region exists.
@@ -133,7 +191,7 @@ public class UiTopology extends UiElement {
      * @return corresponding UI region
      */
     public UiRegion findRegion(RegionId id) {
-        return regionLookup.get(id);
+        return UiRegion.NULL_ID.equals(id) ? nullRegion() : regionLookup.get(id);
     }
 
     /**
@@ -164,6 +222,15 @@ public class UiTopology extends UiElement {
      */
     public int regionCount() {
         return regionLookup.size();
+    }
+
+    /**
+     * Returns all devices in the model.
+     *
+     * @return all devices
+     */
+    public Set<UiDevice> allDevices() {
+        return new HashSet<>(deviceLookup.values());
     }
 
     /**
@@ -207,45 +274,105 @@ public class UiTopology extends UiElement {
         return deviceLookup.size();
     }
 
+
     /**
-     * Returns the link with the specified identifier, or null if no such
-     * link exists.
+     * Returns all device links in the model.
+     *
+     * @return all device links
+     */
+    public Set<UiDeviceLink> allDeviceLinks() {
+        return new HashSet<>(devLinkLookup.values());
+    }
+
+    /**
+     * Returns the device link with the specified identifier, or null if no
+     * such link exists.
      *
      * @param id the canonicalized link identifier
-     * @return corresponding UI link
+     * @return corresponding UI device link
      */
-    public UiLink findLink(UiLinkId id) {
-        return linkLookup.get(id);
+    public UiDeviceLink findDeviceLink(UiLinkId id) {
+        return devLinkLookup.get(id);
     }
 
     /**
-     * Adds the given UI link to the topology model.
+     * Returns the edge link with the specified identifier, or null if no
+     * such link exists.
      *
-     * @param uiLink link to add
+     * @param id the canonicalized link identifier
+     * @return corresponding UI edge link
      */
-    public void add(UiLink uiLink) {
-        linkLookup.put(uiLink.id(), uiLink);
+    public UiEdgeLink findEdgeLink(UiLinkId id) {
+        return edgeLinkLookup.get(id);
     }
 
     /**
-     * Removes the given UI link from the model.
+     * Adds the given UI device link to the topology model.
      *
-     * @param uiLink link to remove
+     * @param uiDeviceLink link to add
      */
-    public void remove(UiLink uiLink) {
-        UiLink link = linkLookup.remove(uiLink.id());
+    public void add(UiDeviceLink uiDeviceLink) {
+        devLinkLookup.put(uiDeviceLink.id(), uiDeviceLink);
+    }
+
+    /**
+     * Adds the given UI edge link to the topology model.
+     *
+     * @param uiEdgeLink link to add
+     */
+    public void add(UiEdgeLink uiEdgeLink) {
+        edgeLinkLookup.put(uiEdgeLink.id(), uiEdgeLink);
+    }
+
+    /**
+     * Removes the given UI device link from the model.
+     *
+     * @param uiDeviceLink link to remove
+     */
+    public void remove(UiDeviceLink uiDeviceLink) {
+        UiDeviceLink link = devLinkLookup.remove(uiDeviceLink.id());
         if (link != null) {
             link.destroy();
         }
     }
 
     /**
-     * Returns the number of links configured in the topology.
+     * Removes the given UI edge link from the model.
      *
-     * @return number of links
+     * @param uiEdgeLink link to remove
      */
-    public int linkCount() {
-        return linkLookup.size();
+    public void remove(UiEdgeLink uiEdgeLink) {
+        UiEdgeLink link = edgeLinkLookup.remove(uiEdgeLink.id());
+        if (link != null) {
+            link.destroy();
+        }
+    }
+
+    /**
+     * Returns the number of device links configured in the topology.
+     *
+     * @return number of device links
+     */
+    public int deviceLinkCount() {
+        return devLinkLookup.size();
+    }
+
+    /**
+     * Returns the number of edge links configured in the topology.
+     *
+     * @return number of edge links
+     */
+    public int edgeLinkCount() {
+        return edgeLinkLookup.size();
+    }
+
+    /**
+     * Returns all hosts in the model.
+     *
+     * @return all hosts
+     */
+    public Set<UiHost> allHosts() {
+        return new HashSet<>(hostLookup.values());
     }
 
     /**
@@ -333,22 +460,198 @@ public class UiTopology extends UiElement {
     }
 
     /**
-     * Returns the set of UI links with the given identifiers.
+     * Returns the set of UI device links with the given identifiers.
      *
      * @param uiLinkIds link identifiers
-     * @return set of matching UI link instances
+     * @return set of matching UI device link instances
      */
-    Set<UiLink> linkSet(Set<UiLinkId> uiLinkIds) {
-        Set<UiLink> uiLinks = new HashSet<>();
+    Set<UiDeviceLink> linkSet(Set<UiLinkId> uiLinkIds) {
+        Set<UiDeviceLink> result = new HashSet<>();
         for (UiLinkId id : uiLinkIds) {
-            UiLink link = linkLookup.get(id);
+            UiDeviceLink link = devLinkLookup.get(id);
             if (link != null) {
-                uiLinks.add(link);
+                result.add(link);
             } else {
-                log.warn(E_UNMAPPED, "link", id);
+                log.warn(E_UNMAPPED, "device link", id);
             }
         }
-        return uiLinks;
+        return result;
+    }
+
+    /**
+     * Uses the device-device links and data about the regions to compute the
+     * set of synthetic links that are required per region.
+     */
+    public void computeSynthLinks() {
+        List<UiSynthLink> slinks = new ArrayList<>();
+        allDeviceLinks().forEach((link) -> {
+            UiSynthLink synthetic = inferSyntheticLink(link);
+            slinks.add(synthetic);
+            log.debug("Synthetic link: {}", synthetic);
+        });
+
+        synthLinks.clear();
+        synthLinks.addAll(slinks);
+    }
+
+    private UiSynthLink inferSyntheticLink(UiDeviceLink link) {
+        /*
+          Look at the containment hierarchy of each end of the link. Find the
+          common ancestor region R. A synthetic link will be added to R, based
+          on the "next" node back down the branch...
+
+                S1 --- S2       * in the same region ...
+                :      :
+                R      R          return S1 --- S2 (same link instance)
+
+
+                S1 --- S2       * in different regions (R1, R2) at same level
+                :      :
+                R1     R2         return R1 --- R2
+                :      :
+                R      R
+
+                S1 --- S2       * in different regions at different levels
+                :      :
+                R1     R2         return R1 --- R3
+                :      :
+                R      R3
+                       :
+                       R
+
+                S1 --- S2       * in different regions at different levels
+                :      :
+                R      R2         return S1 --- R2
+                       :
+                       R
+
+         */
+        DeviceId a = link.deviceA();
+        DeviceId b = link.deviceB();
+        List<RegionId> aBranch = ancestors(a);
+        List<RegionId> bBranch = ancestors(b);
+        if (aBranch == null || bBranch == null) {
+            return null;
+        }
+
+        return makeSynthLink(link, aBranch, bBranch);
+    }
+
+    // package private for unit testing
+    UiSynthLink makeSynthLink(UiDeviceLink orig,
+                              List<RegionId> aBranch,
+                              List<RegionId> bBranch) {
+
+        final int aSize = aBranch.size();
+        final int bSize = bBranch.size();
+        final int min = Math.min(aSize, bSize);
+
+        int index = 0;
+        RegionId commonRegion = aBranch.get(index);
+
+        while (true) {
+            int next = index + 1;
+            if (next == min) {
+                // no more pairs of regions left to test
+                break;
+            }
+            RegionId rA = aBranch.get(next);
+            RegionId rB = bBranch.get(next);
+            if (rA.equals(rB)) {
+                commonRegion = rA;
+                index++;
+            } else {
+                break;
+            }
+        }
+
+
+        int endPointIndex = index + 1;
+        UiLinkId linkId;
+        UiLink link;
+
+        if (endPointIndex < aSize) {
+            // the A endpoint is a subregion
+            RegionId aRegion = aBranch.get(endPointIndex);
+
+            if (endPointIndex < bSize) {
+                // the B endpoint is a subregion
+                RegionId bRegion = bBranch.get(endPointIndex);
+
+                linkId = uiLinkId(aRegion, bRegion);
+                link = new UiRegionLink(this, linkId);
+
+            } else {
+                // the B endpoint is the device
+                DeviceId dB = orig.deviceB();
+                PortNumber pB = orig.portB();
+
+                linkId = uiLinkId(aRegion, dB, pB);
+                link = new UiRegionDeviceLink(this, linkId);
+            }
+
+        } else {
+            // the A endpoint is the device
+            DeviceId dA = orig.deviceA();
+            PortNumber pA = orig.portA();
+
+            if (endPointIndex < bSize) {
+                // the B endpoint is a subregion
+                RegionId bRegion = bBranch.get(endPointIndex);
+
+                linkId = uiLinkId(bRegion, dA, pA);
+                link = new UiRegionDeviceLink(this, linkId);
+
+            } else {
+                // the B endpoint is the device
+                // (so, we can just use the original device-device link...)
+
+                link = orig;
+            }
+        }
+        return new UiSynthLink(commonRegion, link);
+    }
+
+    private List<RegionId> ancestors(DeviceId id) {
+        // return the ancestor chain from this device to root region
+        UiDevice dev = findDevice(id);
+        if (dev == null) {
+            log.warn("Unable to find cached device with ID %s", id);
+            return null;
+        }
+
+        UiRegion r = dev.uiRegion();
+        List<RegionId> result = new ArrayList<>();
+        while (r != null && !r.isRoot()) {
+            result.add(0, r.id());
+            r = r.parentRegion();
+        }
+        // finally add root region, since this is the grand-daddy of them all
+        result.add(0, UiRegion.NULL_ID);
+        return result;
+    }
+
+
+    /**
+     * Returns the synthetic links associated with the specified region.
+     *
+     * @param regionId the region ID
+     * @return synthetic links for this region
+     */
+    public List<UiSynthLink> findSynthLinks(RegionId regionId) {
+        return synthLinks.stream()
+                .filter(s -> Objects.equals(regionId, s.regionId()))
+                .collect(Collectors.toList());
+    }
+
+
+    /**
+     * Returns the number of synthetic links in the topology.
+     *
+     * @return the synthetic link count
+     */
+    public int synthLinkCount() {
+        return synthLinks.size();
     }
 
     /**
@@ -380,13 +683,22 @@ public class UiTopology extends UiElement {
             sb.append(INDENT_2).append(h).append(EOL);
         }
 
-        sb.append(INDENT_1).append("Links").append(EOL);
-        for (UiLink link : linkLookup.values()) {
+        sb.append(INDENT_1).append("Device Links").append(EOL);
+        for (UiLink link : devLinkLookup.values()) {
+            sb.append(INDENT_2).append(link).append(EOL);
+        }
+
+        sb.append(INDENT_1).append("Edge Links").append(EOL);
+        for (UiLink link : edgeLinkLookup.values()) {
+            sb.append(INDENT_2).append(link).append(EOL);
+        }
+
+        sb.append(INDENT_1).append("Synth Links").append(EOL);
+        for (UiSynthLink link : synthLinks) {
             sb.append(INDENT_2).append(link).append(EOL);
         }
         sb.append("------").append(EOL);
 
         return sb.toString();
     }
-
 }

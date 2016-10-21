@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Open Networking Laboratory
+ * Copyright 2016-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,6 +94,7 @@ public class ResourceConsumerId {
     /**
      * Creates ResourceConsumerId from given value and class.
      *
+     * @param <T> resource consumer class type
      * @param value ID value unique within the given class
      * @param cls class of ResourceConsumer implementation
      * @return created ResourceConsumerId object
@@ -105,6 +106,7 @@ public class ResourceConsumerId {
     /**
      * Creates ResourceConsumerId instance from Identifier object.
      *
+     * @param <T> resource consumer class type
      * @param id identifier object backed by Long value
      * @return created ResourceConsumerId object
      */

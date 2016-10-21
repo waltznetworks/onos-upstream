@@ -17,7 +17,7 @@ package org.onosproject.scalablegateway.api;
 
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.common.collect.Lists;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Sets;
 import org.onlab.packet.Ip4Address;
 import org.onosproject.core.ApplicationId;
@@ -25,12 +25,11 @@ import org.onosproject.net.DeviceId;
 import org.onosproject.net.config.Config;
 import org.slf4j.Logger;
 
-import java.util.Collections;
-import java.util.List;
 import java.util.Set;
+import java.util.stream.StreamSupport;
 
-import static org.slf4j.LoggerFactory.getLogger;
 import static org.onosproject.net.config.Config.FieldPresence.MANDATORY;
+import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * Configuration object for OpensatckNode service.
@@ -42,7 +41,7 @@ public class GatewayNodeConfig extends Config<ApplicationId> {
     public static final String NODES = "nodes";
     public static final String BRIDGE_ID = "bridgeId";
     public static final String DATAPLANE_IP = "dataPlaneIp";
-    public static final String EXTERNAL_INTERFACE_NAME = "gatewayExternalInterfaceName";
+    public static final String UPLINK_INTERFACE_NAME = "uplinkInterface";
 
     /**
      * Returns the set of nodes read from network config.
@@ -62,8 +61,7 @@ public class GatewayNodeConfig extends Config<ApplicationId> {
             try {
                 nodes.add(new GatewayNode.Builder()
                         .gatewayDeviceId(DeviceId.deviceId(jsonNode.path(BRIDGE_ID).asText()))
-                        .gatewayExternalInterfaceNames(
-                                getExternalInterfaceName(jsonNode.path(EXTERNAL_INTERFACE_NAME).asText()))
+                        .uplinkIntf(jsonNode.path(UPLINK_INTERFACE_NAME).asText())
                         .dataIpAddress(Ip4Address.valueOf(jsonNode.path(DATAPLANE_IP).asText())).build());
             } catch (IllegalArgumentException | NullPointerException e) {
                 log.error("Failed to read {}", e.toString());
@@ -72,16 +70,23 @@ public class GatewayNodeConfig extends Config<ApplicationId> {
         return nodes;
     }
 
-    private List<String> getExternalInterfaceName(String s) {
-        List<String> list = Lists.newArrayList();
-        return Collections.addAll(list, s.split(",")) ? list : null;
-    }
-
     @Override
     public boolean isValid() {
-        return hasOnlyFields(NODES, BRIDGE_ID, DATAPLANE_IP, EXTERNAL_INTERFACE_NAME) &&
-                isIpAddress(DATAPLANE_IP, MANDATORY) && isString(BRIDGE_ID, MANDATORY) &&
-                isString(EXTERNAL_INTERFACE_NAME, MANDATORY);
+        JsonNode jsonNodes = object.get(NODES);
+
+        if (jsonNodes == null) {
+            return false;
+        }
+
+        return hasOnlyFields(NODES)
+                && StreamSupport.stream(jsonNodes.spliterator(), false).allMatch(this::checkValid);
+    }
+
+    private boolean checkValid(JsonNode jsonNode) {
+        ObjectNode objectNode = (ObjectNode) jsonNode;
+        return isString(objectNode, BRIDGE_ID, MANDATORY)
+                && isIpAddress(objectNode, DATAPLANE_IP, MANDATORY)
+                && isString(objectNode, UPLINK_INTERFACE_NAME, MANDATORY);
     }
 
 }

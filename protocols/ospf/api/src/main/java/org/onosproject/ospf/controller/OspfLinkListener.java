@@ -23,7 +23,7 @@ public interface OspfLinkListener {
     /**
      * Notifies that we got a link from network.
      *
-     * @param ospfRouter  router instance
+     * @param ospfRouter router instance
      * @param ospfLinkTed link TED information of router
      */
     void addLink(OspfRouter ospfRouter, OspfLinkTed ospfLinkTed);

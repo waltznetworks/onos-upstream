@@ -18,14 +18,18 @@ package org.onosproject.openstackinterface.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import org.apache.commons.io.IOUtils;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
+import org.glassfish.jersey.client.ClientProperties;
+import org.onlab.packet.Ip4Address;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
 import org.onosproject.net.Port;
@@ -33,6 +37,7 @@ import org.onosproject.net.config.ConfigFactory;
 import org.onosproject.net.config.NetworkConfigEvent;
 import org.onosproject.net.config.NetworkConfigListener;
 import org.onosproject.net.config.NetworkConfigRegistry;
+import org.onosproject.openstackinterface.OpenstackFloatingIP;
 import org.onosproject.openstackinterface.OpenstackInterfaceService;
 import org.onosproject.openstackinterface.OpenstackNetwork;
 import org.onosproject.openstackinterface.OpenstackInterfaceConfig;
@@ -40,6 +45,7 @@ import org.onosproject.openstackinterface.OpenstackPort;
 import org.onosproject.openstackinterface.OpenstackRouter;
 import org.onosproject.openstackinterface.OpenstackSecurityGroup;
 import org.onosproject.openstackinterface.OpenstackSubnet;
+import org.onosproject.openstackinterface.web.OpenstackFloatingIpCodec;
 import org.onosproject.openstackinterface.web.OpenstackNetworkCodec;
 import org.onosproject.openstackinterface.web.OpenstackPortCodec;
 import org.onosproject.openstackinterface.web.OpenstackRouterCodec;
@@ -53,7 +59,11 @@ import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.Invocation;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -61,6 +71,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -69,6 +80,7 @@ import java.util.stream.Collectors;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.net.MediaType.JSON_UTF_8;
 import static org.onlab.util.Tools.groupedThreads;
+import static org.onosproject.net.AnnotationKeys.PORT_NAME;
 import static org.onosproject.net.config.basics.SubjectFactories.APP_SUBJECT_FACTORY;
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -84,12 +96,17 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
     private static final String URI_PORTS = "ports";
     private static final String URI_SUBNETS = "subnets";
     private static final String URI_SECURITY_GROUPS = "security-groups";
+    private static final String URI_FLOATINGIPS = "floatingips";
     private static final String URI_TOKENS = "tokens";
+    private static final String FLOATINGIP = "floatingip";
+    private static final String PORT_ID = "port_id";
+    private static final String FIXED_IP_ADDRESS = "fixed_ip_address";
 
     private static final String PATH_ROUTERS = "routers";
     private static final String PATH_NETWORKS = "networks";
     private static final String PATH_PORTS = "ports";
     private static final String PATH_SUBNETS = "subnets";
+    private static final String PATH_FLOATINGIPS = "floatingips";
     private static final String PATH_ACCESS = "access";
     private static final String PATH_TOKEN = "token";
     private static final String PATH_ID = "id";
@@ -97,16 +114,17 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
 
     private static final String HEADER_AUTH_TOKEN = "X-Auth-Token";
     private static final String TOKEN_DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+    private static final int DEFAULT_TIMEOUT_MS = 2000;
 
     private final Logger log = getLogger(getClass());
+    private final Client client = ClientBuilder.newClient();
+
     private String neutronUrl;
     private String keystoneUrl;
     private String tokenId;
     private String tokenExpires;
     private String userName;
     private String pass;
-
-    private static final String PORT_NAME = "portName";
 
     private ApplicationId appId;
 
@@ -118,7 +136,7 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
 
     private InternalConfigListener internalConfigListener = new InternalConfigListener();
     private ExecutorService networkEventExcutorService =
-            Executors.newSingleThreadExecutor(groupedThreads("onos/openstackinterface", "config-event"));
+            Executors.newSingleThreadExecutor(groupedThreads("onos/openstackinterface", "config-event", log));
 
     private final Set<ConfigFactory> factories = ImmutableSet.of(
             new ConfigFactory<ApplicationId, OpenstackInterfaceConfig>(APP_SUBJECT_FACTORY,
@@ -131,7 +149,6 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
             }
     );
 
-
     @Activate
     protected void activate() {
         appId = coreService
@@ -140,6 +157,10 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
         factories.forEach(cfgService::registerConfigFactory);
         cfgService.addListener(internalConfigListener);
 
+        client.property(ClientProperties.CONNECT_TIMEOUT, DEFAULT_TIMEOUT_MS);
+        client.property(ClientProperties.READ_TIMEOUT, DEFAULT_TIMEOUT_MS);
+
+        configureNetwork();
         log.info("started");
     }
 
@@ -156,11 +177,14 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
      * @return List of OpenstackNetwork
      */
     public Collection<OpenstackNetwork> getNetworks() {
+        Invocation.Builder builder = getClientBuilder(neutronUrl, URI_NETWORKS);
+        if (builder == null) {
+            log.warn("Failed to get networks");
+            return Collections.EMPTY_LIST;
+        }
 
-        Invocation.Builder builder = getClientBuilder(neutronUrl + URI_NETWORKS);
         String response = builder.accept(MediaType.APPLICATION_JSON_TYPE).
                 header(HEADER_AUTH_TOKEN, getToken()).get(String.class);
-
         log.debug("networks response:" + response);
 
         ObjectMapper mapper = new ObjectMapper();
@@ -186,8 +210,12 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
      * @return List of OpenstackPort
      */
     public Collection<OpenstackPort> getPorts() {
+        Invocation.Builder builder = getClientBuilder(neutronUrl, URI_PORTS);
+        if (builder == null) {
+            log.warn("Failed to get ports");
+            return Collections.EMPTY_LIST;
+        }
 
-        Invocation.Builder builder = getClientBuilder(neutronUrl + URI_PORTS);
         String response = builder.accept(MediaType.APPLICATION_JSON_TYPE).
                 header(HEADER_AUTH_TOKEN, getToken()).get(String.class);
 
@@ -209,7 +237,12 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
     }
 
     public Collection<OpenstackRouter> getRouters() {
-        Invocation.Builder builder = getClientBuilder(neutronUrl + PATH_ROUTERS);
+        Invocation.Builder builder = getClientBuilder(neutronUrl, PATH_ROUTERS);
+        if (builder == null) {
+            log.warn("Failed to get routers");
+            return Collections.EMPTY_LIST;
+        }
+
         String response = builder.accept(MediaType.APPLICATION_JSON_TYPE).
                 header(HEADER_AUTH_TOKEN, getToken()).get(String.class);
 
@@ -238,7 +271,12 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
      * @return List of OpenstackSubnet
      */
     public Collection<OpenstackSubnet> getSubnets() {
-        Invocation.Builder builder = getClientBuilder(neutronUrl + URI_SUBNETS);
+        Invocation.Builder builder = getClientBuilder(neutronUrl, URI_SUBNETS);
+        if (builder == null) {
+            log.warn("Failed to get subnets");
+            return Collections.EMPTY_LIST;
+        }
+
         String response = builder.accept(MediaType.APPLICATION_JSON_TYPE).
                 header(HEADER_AUTH_TOKEN, getToken()).get(String.class);
 
@@ -265,8 +303,14 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
      * @param id Security Group ID
      * @return OpenstackSecurityGroup object or null if fails
      */
-    public OpenstackSecurityGroup getSecurityGroup(String id) {
-        Invocation.Builder builder = getClientBuilder(neutronUrl + URI_SECURITY_GROUPS + "/" + id);
+    @Override
+    public OpenstackSecurityGroup securityGroup(String id) {
+        Invocation.Builder builder = getClientBuilder(neutronUrl, URI_SECURITY_GROUPS + "/" + id);
+        if (builder == null) {
+            log.warn("Failed to get security group {}", id);
+            return null;
+        }
+
         String response = builder.accept(MediaType.APPLICATION_JSON_TYPE).
                 header(HEADER_AUTH_TOKEN, getToken()).get(String.class);
 
@@ -277,15 +321,19 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
             OpenstackSecurityGroupCodec sgCodec = new OpenstackSecurityGroupCodec();
             securityGroup = sgCodec.decode(node, null);
         } catch (IOException e) {
-            log.warn("getSecurityGroup()", e);
+            log.warn("securityGroup()", e);
         }
 
         return securityGroup;
     }
 
-    private Invocation.Builder getClientBuilder(String uri) {
-        Client client = ClientBuilder.newClient();
-        WebTarget wt = client.target(uri);
+    private Invocation.Builder getClientBuilder(String baseUrl, String path) {
+        if (Strings.isNullOrEmpty(baseUrl)) {
+            log.warn("Keystone or Neutron URL is not set");
+            return null;
+        }
+
+        WebTarget wt = client.target(baseUrl + path);
         return wt.request(JSON_UTF_8.toString());
     }
 
@@ -294,9 +342,13 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
             String request = "{\"auth\": {\"tenantName\": \"admin\", " +
                     "\"passwordCredentials\":  {\"username\": \"" +
                     userName + "\",\"password\": \"" + pass + "\"}}}";
-            Invocation.Builder builder = getClientBuilder(keystoneUrl + URI_TOKENS);
-            String response = builder.accept(MediaType.APPLICATION_JSON).post(Entity.json(request), String.class);
+            Invocation.Builder builder = getClientBuilder(keystoneUrl, URI_TOKENS);
+            if (builder == null) {
+                log.warn("Failed to get token");
+                return null;
+            }
 
+            String response = builder.accept(MediaType.APPLICATION_JSON).post(Entity.json(request), String.class);
             ObjectMapper mapper = new ObjectMapper();
             try {
                 ObjectNode node = (ObjectNode) mapper.readTree(response);
@@ -414,21 +466,107 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
                 .findAny().orElse(null);
     }
 
-    private class InternalConfigListener implements NetworkConfigListener {
-
-        public void configureNetwork() {
-            OpenstackInterfaceConfig cfg =
-                    cfgService.getConfig(appId, OpenstackInterfaceConfig.class);
-            if (cfg == null) {
-                log.error("There is no openstack server information in config.");
-                return;
-            }
-
-            neutronUrl = checkNotNull(cfg.neutronServer());
-            keystoneUrl = checkNotNull(cfg.keystoneServer());
-            userName = checkNotNull(cfg.userName());
-            pass = checkNotNull(cfg.password());
+    @Override
+    public Collection<OpenstackFloatingIP> floatingIps() {
+        Invocation.Builder builder = getClientBuilder(neutronUrl, URI_FLOATINGIPS);
+        if (builder == null) {
+            log.warn("Failed to get floating IPs");
+            return Collections.EMPTY_LIST;
         }
+
+        String response = builder.accept(MediaType.APPLICATION_JSON_TYPE).
+                header(HEADER_AUTH_TOKEN, getToken()).get(String.class);
+
+        log.debug("floatingIps response:" + response);
+
+        ObjectMapper mapper = new ObjectMapper();
+        List<OpenstackFloatingIP> openstackFloatingIPs = Lists.newArrayList();
+        try {
+            ObjectNode node = (ObjectNode) mapper.readTree(response);
+            ArrayNode floatingIpList = (ArrayNode) node.path(PATH_FLOATINGIPS);
+            OpenstackFloatingIpCodec fipCodec = new OpenstackFloatingIpCodec();
+            floatingIpList.forEach(f -> openstackFloatingIPs.add(fipCodec.decode((ObjectNode) f, null)));
+        } catch (IOException e) {
+            log.warn("floatingIps()", e);
+        }
+
+        openstackFloatingIPs.removeAll(Collections.singleton(null));
+
+        return openstackFloatingIPs;
+    }
+
+    @Override
+    public boolean updateFloatingIp(String id, String portId, Optional<Ip4Address> fixedIpAddress) {
+        Invocation.Builder builder = getClientBuilder(neutronUrl, URI_FLOATINGIPS + "/" + id);
+
+        if (builder == null || (portId != null && !fixedIpAddress.isPresent())) {
+            log.warn("Failed to update floating IP");
+            return false;
+        }
+
+        ObjectNode objectNode = createFloatingIpObject(portId, fixedIpAddress);
+
+        InputStream inputStream = new ByteArrayInputStream(objectNode.toString().getBytes());
+
+        try {
+            Response response = builder.header(HEADER_AUTH_TOKEN, getToken())
+                    .put(Entity.entity(IOUtils.toString(inputStream, StandardCharsets.UTF_8),
+                            MediaType.APPLICATION_JSON));
+            log.debug("updateFloatingIp called: {}, status: {}", response.readEntity(String.class),
+                    String.valueOf(response.getStatus()));
+
+            return checkReply(response);
+        } catch (IOException e) {
+            log.error("Cannot do PUT {} request");
+            return false;
+        }
+    }
+
+    private ObjectNode createFloatingIpObject(String portId, Optional<Ip4Address> fixedIpAddress) {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode objectNode = mapper.createObjectNode();
+
+        objectNode.putObject(FLOATINGIP)
+                .put(PORT_ID, portId);
+
+        if (portId != null) {
+            objectNode.put(FIXED_IP_ADDRESS, fixedIpAddress.get().toString());
+        }
+
+        return objectNode;
+    }
+
+    private boolean checkReply(Response response) {
+        if (response != null) {
+            return checkStatusCode(response.getStatus());
+        }
+
+        log.warn("Null floating IP response from openstack");
+        return false;
+    }
+
+    private boolean checkStatusCode(int statusCode) {
+        if (statusCode == Response.Status.OK.getStatusCode()) {
+            return true;
+        }
+
+        return false;
+    }
+    private void configureNetwork() {
+        OpenstackInterfaceConfig cfg =
+                cfgService.getConfig(appId, OpenstackInterfaceConfig.class);
+        if (cfg == null) {
+            log.error("There is no openstack server information in config.");
+            return;
+        }
+
+        neutronUrl = checkNotNull(cfg.neutronServer());
+        keystoneUrl = checkNotNull(cfg.keystoneServer());
+        userName = checkNotNull(cfg.userName());
+        pass = checkNotNull(cfg.password());
+    }
+
+    private class InternalConfigListener implements NetworkConfigListener {
 
         @Override
         public void event(NetworkConfigEvent event) {
@@ -437,7 +575,7 @@ public class OpenstackInterfaceManager implements OpenstackInterfaceService {
                     event.configClass().equals(OpenstackInterfaceConfig.class)) {
 
                 log.info("Network configuration changed");
-                networkEventExcutorService.execute(this::configureNetwork);
+                networkEventExcutorService.execute(() -> configureNetwork());
             }
         }
     }

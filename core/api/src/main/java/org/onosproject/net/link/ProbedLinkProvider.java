@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-present Open Networking Laboratory
+ * Copyright 2016-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,9 @@ public interface ProbedLinkProvider extends LinkProvider {
     /**
      * Build a stringified MAC address using the ClusterMetadata hash for uniqueness.
      * Form of MAC is "02:eb" followed by four bytes of clusterMetadata hash.
+     *
+     * @param cm cluster metadata
+     * @return stringified mac address
      */
     static String fingerprintMac(ClusterMetadata cm) {
         if (cm == null) {

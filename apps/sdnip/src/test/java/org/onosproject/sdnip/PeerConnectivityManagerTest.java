@@ -15,6 +15,7 @@
  */
 package org.onosproject.sdnip;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import org.junit.Before;
 import org.junit.Test;
@@ -85,16 +86,12 @@ public class PeerConnectivityManagerTest extends AbstractIntentTest {
 
     private List<PointToPointIntent> intentList;
 
-    private final String dpid1 = "00:00:00:00:00:00:00:01";
-    private final String dpid2 = "00:00:00:00:00:00:00:02";
-    private final String dpid3 = "00:00:00:00:00:00:00:03";
-
     private final DeviceId deviceId1 =
-            DeviceId.deviceId(SdnIp.dpidToUri(dpid1));
+            DeviceId.deviceId("of:0000000000000001");
     private final DeviceId deviceId2 =
-            DeviceId.deviceId(SdnIp.dpidToUri(dpid2));
+            DeviceId.deviceId("of:0000000000000002");
     private final DeviceId deviceId3 =
-            DeviceId.deviceId(SdnIp.dpidToUri(dpid3));
+            DeviceId.deviceId("of:0000000000000003");
 
     // Interfaces connected to BGP speakers
     private final ConnectPoint s1Eth100 =
@@ -216,10 +213,11 @@ public class PeerConnectivityManagerTest extends AbstractIntentTest {
         InterfaceIpAddress ia4 =
                 new InterfaceIpAddress(IpAddress.valueOf("192.168.40.101"),
                                        IpPrefix.valueOf("192.168.40.0/24"));
-        Interface intfsw3eth1 = new Interface(s3Eth1,
-                                              Collections.singleton(ia4),
-                                              MacAddress.valueOf("00:00:00:00:00:04"),
-                                              VLAN10);
+        Interface intfsw3eth1 = new Interface(Interface.NO_INTERFACE_NAME,
+                s3Eth1,
+                ImmutableList.of(ia4),
+                MacAddress.valueOf("00:00:00:00:00:04"),
+                VLAN10);
 
         configuredInterfaces.put(interfaceSw3Eth1, intfsw3eth1);
 
@@ -227,10 +225,11 @@ public class PeerConnectivityManagerTest extends AbstractIntentTest {
         InterfaceIpAddress ia5 =
                 new InterfaceIpAddress(IpAddress.valueOf("192.168.50.101"),
                                        IpPrefix.valueOf("192.168.50.0/24"));
-        Interface intfsw3eth1intf2 = new Interface(s3Eth1,
-                                                   Collections.singleton(ia5),
-                                                   MacAddress.valueOf("00:00:00:00:00:05"),
-                                                   VLAN20);
+        Interface intfsw3eth1intf2 = new Interface(Interface.NO_INTERFACE_NAME,
+                s3Eth1,
+                ImmutableList.of(ia5),
+                MacAddress.valueOf("00:00:00:00:00:05"),
+                VLAN20);
 
         configuredInterfaces.put(interfaceSw3Eth1intf2, intfsw3eth1intf2);
 
@@ -265,7 +264,7 @@ public class PeerConnectivityManagerTest extends AbstractIntentTest {
 
         // Non-existent interface used during one of the tests
         expect(interfaceService.getInterfacesByPort(new ConnectPoint(
-                DeviceId.deviceId(SdnIp.dpidToUri("00:00:00:00:00:00:01:00")),
+                DeviceId.deviceId("of:0000000000000100"),
                 PortNumber.portNumber(1))))
                     .andReturn(null).anyTimes();
 
