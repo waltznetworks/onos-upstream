@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Open Networking Laboratory
+ * Copyright 2016-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,8 +30,9 @@ public class OpticalPathEvent extends AbstractEvent<OpticalPathEvent.Type, Optic
 
     /**
      * Creates OpticalPathEvent object with specified type and subject.
-     * @param type
-     * @param subject
+     *
+     * @param type type of event
+     * @param subject subject of the event
      */
     public OpticalPathEvent(Type type, OpticalConnectivityId subject) {
         super(type, subject);

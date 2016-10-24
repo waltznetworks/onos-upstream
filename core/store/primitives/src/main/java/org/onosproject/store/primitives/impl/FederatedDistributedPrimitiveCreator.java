@@ -27,10 +27,12 @@ import org.onosproject.store.primitives.DistributedPrimitiveCreator;
 import org.onosproject.store.service.AsyncAtomicCounter;
 import org.onosproject.store.service.AsyncAtomicValue;
 import org.onosproject.store.service.AsyncConsistentMap;
+import org.onosproject.store.service.AsyncConsistentTreeMap;
 import org.onosproject.store.service.AsyncDistributedSet;
+import org.onosproject.store.service.AsyncDocumentTree;
 import org.onosproject.store.service.AsyncLeaderElector;
-import org.onosproject.store.service.DistributedQueue;
 import org.onosproject.store.service.Serializer;
+import org.onosproject.store.service.WorkQueue;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableSet;
@@ -68,6 +70,12 @@ public class FederatedDistributedPrimitiveCreator implements DistributedPrimitiv
     }
 
     @Override
+    public <V> AsyncConsistentTreeMap<V> newAsyncConsistentTreeMap(String name,
+                                                                   Serializer serializer) {
+        return getCreator(name).newAsyncConsistentTreeMap(name, serializer);
+    }
+
+    @Override
     public <E> AsyncDistributedSet<E> newAsyncDistributedSet(String name, Serializer serializer) {
         return DistributedPrimitives.newSetFromMap(newAsyncConsistentMap(name, serializer));
     }
@@ -80,11 +88,6 @@ public class FederatedDistributedPrimitiveCreator implements DistributedPrimitiv
     @Override
     public <V> AsyncAtomicValue<V> newAsyncAtomicValue(String name, Serializer serializer) {
         return getCreator(name).newAsyncAtomicValue(name, serializer);
-    }
-
-    @Override
-    public <E> DistributedQueue<E> newDistributedQueue(String name, Serializer serializer) {
-        return getCreator(name).newDistributedQueue(name, serializer);
     }
 
     @Override
@@ -101,6 +104,16 @@ public class FederatedDistributedPrimitiveCreator implements DistributedPrimitiv
     }
 
     @Override
+    public <E> WorkQueue<E> newWorkQueue(String name, Serializer serializer) {
+        return getCreator(name).newWorkQueue(name, serializer);
+    }
+
+    @Override
+    public <V> AsyncDocumentTree<V> newAsyncDocumentTree(String name, Serializer serializer) {
+        return getCreator(name).newAsyncDocumentTree(name, serializer);
+    }
+
+    @Override
     public Set<String> getAsyncConsistentMapNames() {
         return members.values()
                       .stream()
@@ -114,6 +127,15 @@ public class FederatedDistributedPrimitiveCreator implements DistributedPrimitiv
         return members.values()
                       .stream()
                       .map(DistributedPrimitiveCreator::getAsyncAtomicCounterNames)
+                      .reduce(Sets::union)
+                      .orElse(ImmutableSet.of());
+    }
+
+    @Override
+    public Set<String> getWorkQueueNames() {
+        return members.values()
+                      .stream()
+                      .map(DistributedPrimitiveCreator::getWorkQueueNames)
                       .reduce(Sets::union)
                       .orElse(ImmutableSet.of());
     }

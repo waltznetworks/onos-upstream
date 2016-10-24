@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.StreamSupport;
 
+import static org.onlab.util.Tools.nullIsIllegal;
 import static org.onlab.util.Tools.nullIsNotFound;
 
 /**
@@ -65,6 +66,7 @@ public class FlowsWebResource extends AbstractWebResource {
     private static final String DEVICE_NOT_FOUND = "Device is not found";
     private static final String FLOW_NOT_FOUND = "Flow is not found";
     private static final String APP_ID_NOT_FOUND = "Application Id is not found";
+    private static final String FLOW_ARRAY_REQUIRED = "Flows array was not specified";
     private static final String FLOWS = "flows";
     private static final String DEVICE_ID = "deviceId";
     private static final String FLOW_ID = "flowId";
@@ -103,6 +105,7 @@ public class FlowsWebResource extends AbstractWebResource {
      * Criteria description:
      * https://wiki.onosproject.org/display/ONOS/Flow+Rule+Criteria
      *
+     * @param appId application id
      * @param stream flow rules JSON
      * @return status of the request - CREATED if the JSON is correct,
      * BAD_REQUEST if the JSON is invalid
@@ -114,18 +117,20 @@ public class FlowsWebResource extends AbstractWebResource {
     public Response createFlows(@QueryParam("appId") String appId, InputStream stream) {
         try {
             ObjectNode jsonTree = (ObjectNode) mapper().readTree(stream);
-            ArrayNode flowsArray = (ArrayNode) jsonTree.get(FLOWS);
+            ArrayNode flowsArray = nullIsIllegal((ArrayNode) jsonTree.get(FLOWS),
+                                                 FLOW_ARRAY_REQUIRED);
 
             if (appId != null) {
                 flowsArray.forEach(flowJson -> ((ObjectNode) flowJson).put("appId", appId));
             }
 
             List<FlowRule> rules = codec(FlowRule.class).decode(flowsArray, this);
+
             service.applyFlowRules(rules.toArray(new FlowRule[rules.size()]));
             rules.forEach(flowRule -> {
                 ObjectNode flowNode = mapper().createObjectNode();
                 flowNode.put(DEVICE_ID, flowRule.deviceId().toString())
-                        .put(FLOW_ID, flowRule.id().value());
+                        .put(FLOW_ID, Long.toString(flowRule.id().value()));
                 flowsNode.add(flowNode);
             });
         } catch (IOException ex) {

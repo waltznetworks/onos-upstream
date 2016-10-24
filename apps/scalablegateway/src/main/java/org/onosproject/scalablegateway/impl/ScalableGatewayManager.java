@@ -16,18 +16,18 @@
 
 package org.onosproject.scalablegateway.impl;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
-
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
+import org.onlab.util.KryoNamespace;
+import org.onlab.util.Tools;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
-
 import org.onosproject.core.GroupId;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.Port;
@@ -38,18 +38,29 @@ import org.onosproject.net.config.NetworkConfigListener;
 import org.onosproject.net.config.NetworkConfigRegistry;
 import org.onosproject.net.config.NetworkConfigService;
 import org.onosproject.net.config.basics.SubjectFactories;
+import org.onosproject.net.device.DeviceEvent;
+import org.onosproject.net.device.DeviceListener;
 import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.driver.DriverService;
+import org.onosproject.net.group.Group;
+import org.onosproject.net.group.GroupKey;
+import org.onosproject.net.group.GroupService;
 import org.onosproject.scalablegateway.api.GatewayNode;
 import org.onosproject.scalablegateway.api.GatewayNodeConfig;
 import org.onosproject.scalablegateway.api.ScalableGatewayService;
-
-import java.util.List;
-import java.util.Map;
-
+import org.onosproject.store.serializers.KryoNamespaces;
+import org.onosproject.store.service.ConsistentMap;
+import org.onosproject.store.service.Serializer;
+import org.onosproject.store.service.StorageService;
+import org.onosproject.store.service.Versioned;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
+import static org.onosproject.net.AnnotationKeys.PORT_NAME;
 
 /**
  * Manages gateway node for gateway scalability.
@@ -63,11 +74,7 @@ public class ScalableGatewayManager implements ScalableGatewayService {
     private ApplicationId appId;
     private static final String APP_ID = "org.onosproject.scalablegateway";
     private static final String APP_NAME = "scalablegateway";
-    private static final String GATEWAYNODE_CAN_NOT_BE_NULL = "The gateway node can not be null";
-    private static final String PORT_CAN_NOT_BE_NULL = "The port can not be null";
-    private static final String FAIL_ADD_GATEWAY = "Adding process is failed as existing deivce id";
-    private static final String FAIL_REMOVE_GATEWAY = "Removing process is failed as unknown deivce id";
-    private static final String PORT_NAME = "portName";
+    private static final String GATEWAYNODE_MAP_NAME = "gatewaynode-map";
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected CoreService coreService;
@@ -81,9 +88,20 @@ public class ScalableGatewayManager implements ScalableGatewayService {
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected DeviceService deviceService;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected DriverService driverService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected GroupService groupService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected StorageService storageService;
+
     private GatewayNodeConfig config;
+    private SelectGroupHandler selectGroupHandler;
 
     private final NetworkConfigListener configListener = new InternalConfigListener();
+    private final InternalDeviceListener internalDeviceListener = new InternalDeviceListener();
 
     private final ConfigFactory configFactory =
             new ConfigFactory(SubjectFactories.APP_SUBJECT_FACTORY, GatewayNodeConfig.class, APP_NAME) {
@@ -92,23 +110,34 @@ public class ScalableGatewayManager implements ScalableGatewayService {
                     return new GatewayNodeConfig();
                 }
             };
-    private Map<DeviceId, GatewayNode> gatewayNodeMap = Maps.newHashMap(); // Map<GatewayNode`s Id, GatewayNode object>
+
+    private ConsistentMap<DeviceId, GatewayNode> gatewayNodeMap; // Map<GatewayNode Id, GatewayNode object>
+    private static final KryoNamespace.Builder GATEWAYNODE_SERIALIZER = KryoNamespace.newBuilder()
+            .register(KryoNamespaces.API)
+            .register(GatewayNode.class);
 
     @Activate
     protected void activate() {
         appId = coreService.registerApplication(APP_ID);
+
+        gatewayNodeMap = storageService.<DeviceId, GatewayNode>consistentMapBuilder()
+                .withSerializer(Serializer.using(GATEWAYNODE_SERIALIZER.build()))
+                .withName(GATEWAYNODE_MAP_NAME)
+                .withApplicationId(appId)
+                .build();
+
         configRegistry.registerConfigFactory(configFactory);
         configService.addListener(configListener);
+        deviceService.addListener(internalDeviceListener);
 
-        readConfiguration();
+        selectGroupHandler = new SelectGroupHandler(groupService, deviceService, driverService, appId);
 
         log.info("started");
     }
 
     @Deactivate
     protected void deactivate() {
-        gatewayNodeMap.clear();
-
+        deviceService.removeListener(internalDeviceListener);
         configService.removeListener(configListener);
 
         log.info("stopped");
@@ -116,33 +145,44 @@ public class ScalableGatewayManager implements ScalableGatewayService {
 
     @Override
     public GatewayNode getGatewayNode(DeviceId deviceId) {
-        return checkNotNull(gatewayNodeMap.get(deviceId), GATEWAYNODE_CAN_NOT_BE_NULL);
+        GatewayNode gatewayNode = gatewayNodeMap.get(deviceId).value();
+        if (gatewayNode == null) {
+            log.warn("Gateway with device ID {} does not exist");
+            return null;
+        }
+        return gatewayNode;
     }
 
     @Override
-    public List<PortNumber> getGatewayExternalPorts(DeviceId deviceId) {
-        GatewayNode gatewayNode = checkNotNull(gatewayNodeMap.get(deviceId), GATEWAYNODE_CAN_NOT_BE_NULL);
-        List<PortNumber> portNumbers = Lists.newArrayList();
-        gatewayNode.getGatewayExternalInterfaceNames()
-                .stream()
-                .forEach(name -> portNumbers.add(findPortNumFromPortName(gatewayNode.getGatewayDeviceId(), name)));
-        return portNumbers;
-    }
+    public PortNumber getUplinkPort(DeviceId deviceId) {
+        GatewayNode gatewayNode = gatewayNodeMap.get(deviceId).value();
+        if (gatewayNode == null) {
+            log.warn("Gateway with device ID {} does not exist");
+            return null;
+        }
 
-    private PortNumber findPortNumFromPortName(DeviceId gatewayDeviceId, String name) {
-        Port port = deviceService.getPorts(gatewayDeviceId)
-                .stream()
-                .filter(p -> p.annotations().value(PORT_NAME).equals(name))
-                .iterator()
-                .next();
-        return checkNotNull(port, PORT_CAN_NOT_BE_NULL).number();
-
+        Optional<Port> port = deviceService.getPorts(deviceId).stream()
+                .filter(p -> Objects.equals(
+                        p.annotations().value(PORT_NAME),
+                        gatewayNode.getUplinkIntf()))
+                .findFirst();
+        if (!port.isPresent()) {
+            log.warn("Cannot find uplink interface from gateway {}", deviceId);
+            return null;
+        }
+        return port.get().number();
     }
 
     @Override
-    public GroupId getGroupIdForGatewayLoadBalance(DeviceId srcDeviceId) {
-        //TODO: Implement group generation method by handler
-        return null;
+    public synchronized GroupId getGatewayGroupId(DeviceId srcDeviceId) {
+        GroupKey groupKey = selectGroupHandler.getGroupKey(srcDeviceId);
+        Group group = groupService.getGroup(srcDeviceId, groupKey);
+        if (group == null) {
+            log.info("Created gateway group for {}", srcDeviceId);
+            return selectGroupHandler.createGatewayGroup(srcDeviceId, getGatewayNodes());
+        } else {
+            return group.id();
+        }
     }
 
     @Override
@@ -150,9 +190,9 @@ public class ScalableGatewayManager implements ScalableGatewayService {
         List<GatewayNode> gatewayNodeList = Lists.newArrayList();
         gatewayNodeMap.values()
                 .stream()
-                .forEach(gatewayNode -> gatewayNodeList.add(gatewayNode));
+                .map(Versioned::value)
+                .forEach(gatewayNodeList::add);
         return gatewayNodeList;
-
     }
 
     @Override
@@ -160,20 +200,49 @@ public class ScalableGatewayManager implements ScalableGatewayService {
         List<DeviceId> deviceIdList = Lists.newArrayList();
         gatewayNodeMap.values()
                 .stream()
+                .map(Versioned::value)
                 .forEach(gatewayNode -> deviceIdList.add(gatewayNode.getGatewayDeviceId()));
         return deviceIdList;
-
     }
 
     @Override
-    public boolean addGatewayNode(GatewayNode gatewayNode) {
-        gatewayNodeMap.putIfAbsent(gatewayNode.getGatewayDeviceId(), gatewayNode);
-        return true;
+    public synchronized boolean addGatewayNode(GatewayNode gatewayNode) {
+        Versioned<GatewayNode> existingNode = gatewayNodeMap.put(gatewayNode.getGatewayDeviceId(),
+                gatewayNode);
+        if (existingNode == null) {
+            updateGatewayGroup(gatewayNode, true);
+            log.info("Gateway {} is added to Gateway pool", gatewayNode);
+            return true;
+        } else if (!existingNode.value().equals(gatewayNode)) {
+            updateGatewayGroup(existingNode.value(), false);
+            updateGatewayGroup(gatewayNode, true);
+            log.info("Gateway {} is updated", gatewayNode);
+            return true;
+        } else {
+            return false;
+        }
     }
 
     @Override
-    public boolean deleteGatewayNode(GatewayNode gatewayNode) {
-        return gatewayNodeMap.remove(gatewayNode.getGatewayDeviceId(), gatewayNode);
+    public synchronized boolean deleteGatewayNode(GatewayNode gatewayNode) {
+        boolean result = gatewayNodeMap.remove(gatewayNode.getGatewayDeviceId(), gatewayNode);
+        if (result) {
+            updateGatewayGroup(gatewayNode, false);
+            log.info("Deleted gateway with device ID {}", gatewayNode.getGatewayDeviceId());
+        }
+        return result;
+    }
+
+    private void updateGatewayGroup(GatewayNode gatewayNode, boolean isInsert) {
+        Tools.stream(deviceService.getAvailableDevices()).forEach(device -> {
+            Tools.stream(groupService.getGroups(device.id(), appId)).forEach(group -> {
+                selectGroupHandler.updateGatewayGroupBuckets(
+                        device.id(),
+                        ImmutableList.of(gatewayNode),
+                        isInsert);
+                log.trace("Updated gateway group on {}", device.id());
+            });
+        });
     }
 
     private class InternalConfigListener implements NetworkConfigListener {
@@ -197,6 +266,19 @@ public class ScalableGatewayManager implements ScalableGatewayService {
         }
     }
 
+    private class InternalDeviceListener implements DeviceListener {
+
+        @Override
+        public void event(DeviceEvent deviceEvent) {
+            if (deviceEvent.type() == DeviceEvent.Type.DEVICE_SUSPENDED ||
+                    deviceEvent.type() == DeviceEvent.Type.DEVICE_REMOVED) {
+                DeviceId deviceId = deviceEvent.subject().id();
+                deleteGatewayNode(getGatewayNode(deviceId));
+                log.warn("Gateway with device ID {} is disconnected", deviceId);
+            }
+        }
+    }
+
     private void readConfiguration() {
         config = configService.getConfig(appId, GatewayNodeConfig.class);
         if (config == null) {
@@ -204,8 +286,7 @@ public class ScalableGatewayManager implements ScalableGatewayService {
             return;
         }
 
-        config.gatewayNodes().forEach(gatewayNode -> addGatewayNode(gatewayNode));
-
+        config.gatewayNodes().forEach(this::addGatewayNode);
         log.info("ScalableGateway configured");
     }
 }

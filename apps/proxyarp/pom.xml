@@ -22,7 +22,7 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos-apps</artifactId>
-        <version>1.6.0</version>
+        <version>1.7.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>onos-app-proxyarp</artifactId>
@@ -42,6 +42,10 @@
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.compendium</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.onosproject</groupId>
+            <artifactId>onos-incubator-api</artifactId>
         </dependency>
     </dependencies>
 

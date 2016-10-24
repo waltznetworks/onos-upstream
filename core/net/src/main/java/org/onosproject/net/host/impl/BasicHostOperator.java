@@ -34,8 +34,6 @@ import java.util.Set;
  */
 public final class BasicHostOperator implements ConfigOperator {
 
-    protected static final double DEFAULT_COORD = -1.0;
-
     private BasicHostOperator() {
     }
 
@@ -66,7 +64,7 @@ public final class BasicHostOperator implements ConfigOperator {
 
         SparseAnnotations sa = combine(cfg, descr.annotations());
         return new DefaultHostDescription(descr.hwAddress(), descr.vlan(),
-                                          location, ipAddresses, sa);
+                                          location, ipAddresses, descr.configured(), sa);
     }
 
     /**
@@ -81,10 +79,8 @@ public final class BasicHostOperator implements ConfigOperator {
         if (cfg.name() != null) {
             newBuilder.set(AnnotationKeys.NAME, cfg.name());
         }
-        if (cfg.latitude() != DEFAULT_COORD) {
+        if (cfg.geoCoordsSet()) {
             newBuilder.set(AnnotationKeys.LATITUDE, Double.toString(cfg.latitude()));
-        }
-        if (cfg.longitude() != DEFAULT_COORD) {
             newBuilder.set(AnnotationKeys.LONGITUDE, Double.toString(cfg.longitude()));
         }
         if (cfg.rackAddress() != null) {

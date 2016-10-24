@@ -42,24 +42,22 @@
 
     // key to button mapping data
     var k2b = {
-        O: { id: 'summary-tog', gid: 'summary', isel: true},
-        I: { id: 'instance-tog', gid: 'uiAttached', isel: true },
-        D: { id: 'details-tog', gid: 'details', isel: true },
-        H: { id: 'hosts-tog', gid: 'endstation', isel: false },
-        M: { id: 'offline-tog', gid: 'switch', isel: true },
-        P: { id: 'ports-tog', gid: 'ports', isel: true },
-        B: { id: 'bkgrnd-tog', gid: 'map', isel: false },
-        G: { id: 'bkgrnd-sel', gid: 'filters' },
-        S: { id: 'sprite-tog', gid: 'cloud', isel: false },
+        O: { id: 'summary-tog', gid: 'm_summary', isel: true},
+        I: { id: 'instance-tog', gid: 'm_uiAttached', isel: true },
+        D: { id: 'details-tog', gid: 'm_details', isel: true },
+        H: { id: 'hosts-tog', gid: 'm_endstation', isel: false },
+        M: { id: 'offline-tog', gid: 'm_switch', isel: true },
+        P: { id: 'ports-tog', gid: 'm_ports', isel: true },
+        B: { id: 'bkgrnd-tog', gid: 'm_map', isel: false },
+        G: { id: 'bkgrnd-sel', gid: 'm_selectMap' },
+        S: { id: 'sprite-tog', gid: 'm_cloud', isel: false },
 
-        // TODO: add reset-node-locations button to toolbar
-        //X: { id: 'nodelock-tog', gid: 'lock', isel: false },
-        Z: { id: 'oblique-tog', gid: 'oblique', isel: false },
-        N: { id: 'filters-btn', gid: 'filters' },
-        L: { id: 'cycleLabels-btn', gid: 'cycleLabels' },
-        R: { id: 'resetZoom-btn', gid: 'resetZoom' },
+        Z: { id: 'oblique-tog', gid: 'm_oblique', isel: false },
+        N: { id: 'filters-btn', gid: 'm_filters' },
+        L: { id: 'cycleLabels-btn', gid: 'm_cycleLabels' },
+        R: { id: 'resetZoom-btn', gid: 'm_resetZoom' },
 
-        E: { id: 'eqMaster-btn', gid: 'eqMaster' }
+        E: { id: 'eqMaster-btn', gid: 'm_eqMaster' }
     };
 
     var prohibited = [
@@ -80,6 +78,7 @@
             porthl: 1,
             bg: 0,
             spr: 0,
+            ovidx: 1,   // default to traffic overlay
             toolbar: 0
         },
         prefsMap = {
@@ -170,7 +169,7 @@
 
         // generate radio button set for overlays; start with 'none'
         var rset = [{
-                gid: 'unknown',
+                gid: 'm_unknown',
                 tooltip: 'No Overlay',
                 cb: function () {
                     tov.tbSelection(null, switchOverlayActions);
@@ -198,6 +197,9 @@
         // ensure dialog has closed (if opened by outgoing overlay)
         tds.closeDialog();
         thirdRow.clear();
+
+        // persist our choice of overlay...
+        persistTopoPrefs('ovidx', ovIndex[oid] || 0);
 
         if (!order.length) {
             thirdRow.setText(selOver);
@@ -264,15 +266,22 @@
         }
     }
 
-    function toggleToolbar() {
-        toolbar.toggle();
+    function persistTopoPrefs(key, val) {
         var prefs = ps.getPrefs(cooktag, defaultPrefsState);
-        prefs.toolbar = !prefs.toolbar;
+        prefs[key] = val === undefined ? !prefs[key] : val;
         ps.setPrefs('topo_prefs', prefs);
     }
 
-    function setDefaultOverlay() {
+    function toggleToolbar() {
+        toolbar.toggle();
+        persistTopoPrefs('toolbar');
+    }
+    
+    function setDefaultOverlay(prefsIdx) {
         var idx = ovIndex[defaultOverlay] || 0;
+        if (prefsIdx >= 0 && prefsIdx < ovRset.size()) {
+            idx = prefsIdx;
+        }
         ovRset.selectedIndex(idx);
     }
 

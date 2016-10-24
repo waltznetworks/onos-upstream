@@ -53,10 +53,7 @@ import org.onosproject.bgpio.types.LinkStateAttributes;
 import org.onosproject.incubator.net.resource.label.LabelResourceAdminService;
 import org.onosproject.incubator.net.resource.label.LabelResourceId;
 import org.onosproject.incubator.net.resource.label.LabelResourcePool;
-import org.onosproject.mastership.MastershipEvent;
-import org.onosproject.mastership.MastershipListener;
 import org.onosproject.mastership.MastershipServiceAdapter;
-import org.onosproject.mastership.MastershipEvent.Type;
 import org.onosproject.net.link.LinkServiceAdapter;
 import org.onosproject.bgpio.types.LinkLocalRemoteIdentifiersTlv;
 import org.onosproject.bgpio.types.RouteDistinguisher;
@@ -68,8 +65,8 @@ import org.onosproject.bgpio.types.attr.BgpLinkAttrMaxLinkBandwidth;
 import org.onosproject.bgpio.types.attr.BgpLinkAttrTeDefaultMetric;
 import org.onosproject.bgpio.util.Constants;
 import org.onosproject.cluster.NodeId;
-import org.onosproject.cluster.RoleInfo;
 import org.onosproject.net.ConnectPoint;
+import org.onosproject.net.DefaultAnnotations;
 import org.onosproject.net.DefaultDevice;
 import org.onosproject.net.DefaultLink;
 import org.onosproject.net.Device;
@@ -82,6 +79,8 @@ import org.onosproject.net.config.ConfigApplyDelegate;
 import org.onosproject.net.config.ConfigFactory;
 import org.onosproject.net.config.NetworkConfigRegistryAdapter;
 import org.onosproject.net.device.DeviceDescription;
+import org.onosproject.net.device.DeviceEvent;
+import org.onosproject.net.device.DeviceListener;
 import org.onosproject.net.device.DeviceProvider;
 import org.onosproject.net.device.DeviceProviderRegistry;
 import org.onosproject.net.device.DeviceProviderService;
@@ -108,7 +107,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public class BgpTopologyProviderTest {
     private static final DeviceId DID2 = DeviceId.deviceId("l3:rd=0::routinguniverse=0:asn=10");
-    private static final String UNKNOWN = new String("unknown");
+    private static final String UNKNOWN = "unknown";
     public static ProviderId providerId = new ProviderId("l3", "foo");
     private static final NodeId NODE1 = new NodeId("Master1");
 
@@ -122,7 +121,7 @@ public class BgpTopologyProviderTest {
     private MockNetConfigRegistryAdapter networkConfigService = new MockNetConfigRegistryAdapter();
     private MockLabelResourceService labelResourceAdminService = new MockLabelResourceService();
     private Map<DeviceId, Device> deviceMap = new HashMap<>();
-    private MastershipListener listener;
+    private DeviceListener listener;
 
     @Before
     public void startUp() throws TestUtilsException {
@@ -134,7 +133,7 @@ public class BgpTopologyProviderTest {
         provider.labelResourceAdminService = labelResourceAdminService;
         provider.mastershipService = mastershipService;
         provider.networkConfigService = networkConfigService;
-        listener = TestUtils.getField(provider, "masterListener");
+        listener = TestUtils.getField(provider, "deviceListener");
         provider.activate();
         assertThat("device provider should be registered", not(nodeRegistry.provider));
         assertThat("link provider should be registered", not(linkRegistry.linkProvider));
@@ -275,7 +274,7 @@ public class BgpTopologyProviderTest {
         Map<ResourceId, List<Resource>> registeredRes = new HashMap<>();
 
         @Override
-        public boolean register(List<Resource> resources) {
+        public boolean register(List<? extends Resource> resources) {
             for (Resource res : resources) {
                 List<Resource> resource = new LinkedList<>();
                 resource.add(res);
@@ -288,7 +287,7 @@ public class BgpTopologyProviderTest {
         }
 
         @Override
-        public boolean unregister(List<ResourceId> ids) {
+        public boolean unregister(List<? extends ResourceId> ids) {
             for (ResourceId id : ids) {
                 if (registeredRes.containsKey(id)) {
                     registeredRes.remove(id);
@@ -887,10 +886,14 @@ public class BgpTopologyProviderTest {
             l.addNode(nodeNlri, details);
             assertThat(nodeRegistry.connected.size(), is(1));
         }
+        DefaultAnnotations.Builder newBuilder = DefaultAnnotations.builder();
 
-        MastershipEvent event = new MastershipEvent(Type.MASTER_CHANGED, nodeRegistry.connected.iterator().next(),
-                new RoleInfo(NodeId.nodeId("Node1"), new LinkedList<>()));
+        newBuilder.set("lsrId", "1.1.1.1");
 
+        Device device = new DefaultDevice(BgpTopologyProviderTest.providerId, nodeRegistry.connected.iterator().next(),
+                Device.Type.ROUTER, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, new ChassisId(), newBuilder.build());
+
+        DeviceEvent event = new DeviceEvent(DeviceEvent.Type.DEVICE_ADDED, device);
         listener.event(event);
         assertThat(labelResourceAdminService.resourcePool.keySet().size(), is(1));
     }
@@ -926,9 +929,16 @@ public class BgpTopologyProviderTest {
         for (BgpNodeListener l : controller.nodeListener) {
             l.addNode(nodeNlri, details);
             assertThat(nodeRegistry.connected.size(), is(1));
-            // Check label resource reserved for that device
-            MastershipEvent event = new MastershipEvent(Type.MASTER_CHANGED, nodeRegistry.connected.iterator().next(),
-                    new RoleInfo(NodeId.nodeId("Node1"), new LinkedList<>()));
+
+            DefaultAnnotations.Builder newBuilder = DefaultAnnotations.builder();
+
+            newBuilder.set("lsrId", "1.1.1.1");
+
+            Device device = new DefaultDevice(BgpTopologyProviderTest.providerId,
+                   nodeRegistry.connected.iterator().next(), Device.Type.ROUTER, UNKNOWN,
+                   UNKNOWN, UNKNOWN, UNKNOWN, new ChassisId(), newBuilder.build());
+
+            DeviceEvent event = new DeviceEvent(DeviceEvent.Type.DEVICE_ADDED, device);
             listener.event(event);
             assertThat(labelResourceAdminService.resourcePool.keySet().size(), is(1));
 
@@ -988,8 +998,15 @@ public class BgpTopologyProviderTest {
             l.addNode(nodeNlri, details);
             assertThat(nodeRegistry.connected.size(), is(1));
             //Check label resource reserved for that device
-            MastershipEvent event = new MastershipEvent(Type.MASTER_CHANGED, nodeRegistry.connected.iterator().next(),
-                    new RoleInfo(NodeId.nodeId("Node1"), new LinkedList<>()));
+            DefaultAnnotations.Builder newBuilder = DefaultAnnotations.builder();
+
+            newBuilder.set("lsrId", "1.1.1.1");
+
+            Device device = new DefaultDevice(BgpTopologyProviderTest.providerId,
+                    nodeRegistry.connected.iterator().next(), Device.Type.ROUTER,
+                    UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, new ChassisId(), newBuilder.build());
+
+            DeviceEvent event = new DeviceEvent(DeviceEvent.Type.DEVICE_ADDED, device);
             listener.event(event);
             assertThat(labelResourceAdminService.resourcePool.keySet().size(), is(1));
             l.addNode(remNodeNlri, details);

@@ -9,10 +9,7 @@ TEST = 'src/test/java/**/'
 RESOURCES_ROOT = 'src/main/resources/'
 TEST_RESOURCES_ROOT = 'src/test/resources/'
 
-
-ONOS_GROUP_ID = 'org.onosproject'
-ONOS_VERSION = '1.6.0'
-ONOS_ARTIFACT_BASE = 'onos-'
+include_defs('//onos.defs')
 
 def _get_name():
     base_path = get_base_path()
@@ -37,10 +34,11 @@ def checkstyle(
 
         sh_test(
                 name = name + '-checkstyle',
-                test = '//tools/build/conf:start-checkstyle',
+                test = '//tools/build/conf:start-buck-daemon',
                 deps = [ jar_target ],
                 args = [
-                    '$(location //tools/build/conf:checkstyle-jar)',
+                    '$(location //tools/build/conf:buck-daemon-jar)',
+                    'checkstyle',
                     '$(location :' + name + '-checkstyle-files)',
                     '$(location //tools/build/conf:checkstyle-xml)',
                     '$(location //tools/build/conf:suppressions-xml)',
@@ -48,8 +46,51 @@ def checkstyle(
                 test_rule_timeout_ms = 20000,
                 labels = [ 'checkstyle' ],
         )
-    else:
-        print 'Not generating checkstyle rule for %s because there are no sources.' % name
+
+def java_doc(
+    name,
+    title,
+    pkgs,
+    paths,
+    srcs = [],
+    deps = [],
+    visibility = [],
+    do_it_wrong = False,
+  ):
+  if do_it_wrong:
+    sourcepath = paths
+  else:
+    sourcepath = ['$SRCDIR/' + n for n in paths]
+
+  if len(srcs) != 0:
+    cmd = ' '.join([
+        'while ! test -f .buckconfig; do cd ..; done;',
+        'javadoc',
+        '-tag onos.rsModel:a:"onos model"',
+        '-quiet',
+        '-protected',
+        '-encoding UTF-8',
+        '-charset UTF-8',
+        '-notimestamp',
+        '-windowtitle "' + title + '"',
+        '-link http://docs.oracle.com/javase/8/docs/api',
+        '-subpackages ',
+        ':'.join(pkgs),
+        '-sourcepath ',
+        ':'.join(sourcepath),
+        ' -classpath ',
+        ':'.join(['$(classpath %s)' % n for n in deps]),
+        '-d $TMP',
+      ]) + ';jar cf $OUT -C $TMP .'
+
+    genrule(
+      name = name,
+      cmd = cmd,
+      srcs = srcs,
+      out = name + '.jar',
+      visibility = visibility,
+)
+
 
 def osgi_jar(
     name = None,
@@ -62,11 +103,18 @@ def osgi_jar(
     description = '',
     debug = False,
     import_packages = '*',
+    dynamicimport_packages = '',
     export_packages = '*',
+    package_name_root = 'org.onosproject',
     include_resources = NONE,
     web_context = NONE,
+    api_title = NONE,
+    api_version = NONE,
+    api_package = NONE,
+    api_description = NONE,
     resources = NONE,
     resources_root = None,
+    tests = None,
     **kwargs
     ):
 
@@ -86,71 +134,59 @@ def osgi_jar(
   if resources and not resources_root:
       resources_root = RESOURCES_ROOT
 
-  bare_jar_name = name + '-jar'
-  osgi_jar_name = name + '-osgi'
+  if api_title != NONE:
+      r = 'WEB-INF/classes/apidoc/swagger.json=swagger.json'
+      include_resources = include_resources + ',' + r if include_resources != NONE else r
+
   mvn_coords = group_id + ':' + name + ':' + version
 
-
-  java_library(
-      name = bare_jar_name,
-      srcs = srcs,
+  onos_jar(
+      name = name,
+      srcs = srcs + glob(['src/main/webapp/**']),
       deps = deps,
-      visibility = [], #intentially, not visible
+      visibility = visibility,
       resources = resources,
       resources_root = resources_root,
+      bundle_name = name,
+      group_id = group_id,
+      bundle_version = version,
+      bundle_license = license,
+      bundle_description = description,
+      import_packages = import_packages,
+      export_packages = export_packages,
+      include_resources = include_resources,
+      dynamicimport_packages = dynamicimport_packages,
+      web_context = web_context,
+      api_title = api_title,
+      api_version = api_version,
+      api_package = api_package,
+      api_description = api_description,
+      tests = tests,
+      maven_coords = mvn_coords,
       **kwargs
-  )
-
-  cp = ':'.join(['$(classpath %s)' % c for c in deps]) if deps else '""'
-
-  args = ( '$(location :%s)' % bare_jar_name, #input jar
-           '$OUT',                            #output jar
-           cp,                                #classpath
-           name,                              #bundle name
-           group_id,                          #group id
-           version,                           #version
-           license,                           #license url
-           "'%s'" % import_packages,          #packages to import
-           "'%s'" % export_packages,          #packages to export
-           include_resources,                 #custom includes to classpath
-           web_context,                       #web context (REST API only)
-           description,                       #description
-          )
-
-  #TODO stage_jar is a horrendous hack
-  stage_jar = 'pushd $SRCDIR; mkdir bin; cd bin; jar xf $(location :%s); ls; popd; ' % bare_jar_name
-  wrap_jar = '$(exe //utils/osgiwrap:osgi-jar) ' + ' '.join(args)
-  bash = stage_jar + wrap_jar
-  if debug:
-    bash = stage_jar + DEBUG_ARG + ' ' + wrap_jar
-    print bash
-
-  genrule(
-    name = osgi_jar_name,
-    bash = bash,
-    out = '%s-%s.jar' % (name, version), #FIXME add version to jar file
-    srcs =  glob(['src/main/webapp/**']),
-    visibility = [], #intentially, not visible
-  )
-
-  # TODO we really should shade the jar with maven flavor
-  prebuilt_jar(
-    name = name,
-    maven_coords = mvn_coords,
-    binary_jar = ':' + osgi_jar_name,
-    visibility = visibility,
   )
 
   ### Checkstyle
   checkstyle(
       name = name + '-checkstyle-files',
       srcs = srcs,
-      jar_target = ':'+ bare_jar_name,
+      jar_target = ':'+ name,
+  )
+
+  java_doc(
+       name = name + '-javadoc',
+       title = 'Java Docs',
+       pkgs = [ package_name_root ],
+       paths = [ 'src/main/java' ],
+       srcs = srcs,
+       deps = deps,
+       visibility = visibility,
+       do_it_wrong = False,
   )
 
   # TODO add project config for intellij
   # project_config(
-  #   src_target = ':' + bare_jar_name,
+  #   src_target = ':' + name,
   #   src_roots = [ 'src/main/java' ],
   #   test_target = ':' + name + '-tests',
   #   test_roots = [ 'src/test/java' ],
@@ -178,6 +214,8 @@ def osgi_jar(
 def osgi_jar_with_tests(
         name = None,
         deps = [],
+        group_id = ONOS_GROUP_ID,
+        version = ONOS_VERSION,
         test_srcs = None,
         test_deps = [ '//lib:TEST' ],
         test_resources = None,
@@ -191,7 +229,10 @@ def osgi_jar_with_tests(
 
   osgi_jar(name = name,
            deps = deps,
+           group_id = group_id,
+           version = version,
            visibility = visibility,
+           tests = [':' + name + '-tests'],
            **kwargs)
 
   if test_resources and not test_resources_root:
@@ -206,19 +247,18 @@ def osgi_jar_with_tests(
   if test_srcs is None:
       test_srcs = glob([TEST + '/*.java'])
 
-  if not test_srcs:
-          print "Generating test rule for %s, but there are no tests." % name
+  mvn_coords = group_id + ':' + name + ':jar:tests:' + version
 
   java_test(
     name = name + '-tests',
     srcs = test_srcs,
     deps = deps +
            test_deps +
-           [':' + name + '-jar'],
-    source_under_test = [':' + name + '-jar'],
+           [':' + name + '#non-osgi'],
     resources = test_resources,
     resources_root = test_resources_root,
-    visibility = visibility
+    maven_coords = mvn_coords,
+    visibility = visibility,
   )
 
   checkstyle(
@@ -226,5 +266,3 @@ def osgi_jar_with_tests(
       srcs = test_srcs,
       jar_target = ':' + name + '-tests',
   )
-
-  #FIXME need to run checkstyle on test sources

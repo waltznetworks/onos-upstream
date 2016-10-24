@@ -15,11 +15,11 @@
  */
 package org.onosproject.scalablegateway.api;
 
-import com.google.common.collect.ImmutableList;
+import com.google.common.base.MoreObjects;
 import org.onlab.packet.Ip4Address;
 import org.onosproject.net.DeviceId;
 
-import java.util.List;
+import java.util.Objects;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -28,13 +28,12 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 public final class GatewayNode {
     private final DeviceId gatewayDeviceId;
-    private final List<String> gatewayExternalInterfaceNames;
+    private final String uplinkIntf;
     private final Ip4Address dataIpAddress;
 
-    private GatewayNode(DeviceId gatewayDeviceId, List<String> gatewayExternalInterfaceNames,
-                        Ip4Address dataIpAddress) {
+    private GatewayNode(DeviceId gatewayDeviceId, String uplinkIntf, Ip4Address dataIpAddress) {
         this.gatewayDeviceId = gatewayDeviceId;
-        this.gatewayExternalInterfaceNames = gatewayExternalInterfaceNames;
+        this.uplinkIntf = uplinkIntf;
         this.dataIpAddress = dataIpAddress;
     }
 
@@ -48,12 +47,12 @@ public final class GatewayNode {
     }
 
     /**
-     * Returns the list of gateway`s interface names.
+     * Returns the gateway`s interface name.
      *
-     * @return The list of interface names
+     * @return The gateway`s interface name
      */
-    public List<String> getGatewayExternalInterfaceNames() {
-        return ImmutableList.copyOf(gatewayExternalInterfaceNames);
+    public String getUplinkIntf() {
+        return uplinkIntf;
     }
 
     /**
@@ -65,13 +64,53 @@ public final class GatewayNode {
         return dataIpAddress;
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+
+        if (obj instanceof GatewayNode) {
+            GatewayNode that = (GatewayNode) obj;
+            if (Objects.equals(gatewayDeviceId, that.gatewayDeviceId) &&
+                    Objects.equals(uplinkIntf, that.uplinkIntf) &&
+                    Objects.equals(dataIpAddress, that.dataIpAddress)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(gatewayDeviceId, uplinkIntf, dataIpAddress);
+    }
+
+    @Override
+    public String toString() {
+        return MoreObjects.toStringHelper(getClass())
+                .add("gatewayDeviceId", gatewayDeviceId)
+                .add("uplinkInterface", uplinkIntf)
+                .add("dataIpAddress", dataIpAddress)
+                .toString();
+    }
+
+    /**
+     * Returns GatewayNode builder object.
+     *
+     * @return GatewayNode builder
+     */
+    public static GatewayNode.Builder builder() {
+        return new Builder();
+    }
+
     /**
      * GatewayNode Builder class.
      */
     public static final class Builder {
 
         private DeviceId gatewayDeviceId;
-        private List<String> gatewayExternalInterfaceNames;
+        private String uplinkIntf;
         private Ip4Address dataIpAddress;
 
         /**
@@ -86,13 +125,13 @@ public final class GatewayNode {
         }
 
         /**
-         * Sets the list of gateway`s interface names.
+         * Sets the gateway`s uplink interface name.
          *
-         * @param names The list of gateway`s interface name
+         * @param name The gateway`s interface name
          * @return Builder object
          */
-        public Builder gatewayExternalInterfaceNames(List<String> names) {
-            this.gatewayExternalInterfaceNames = names;
+        public Builder uplinkIntf(String name) {
+            this.uplinkIntf = name;
             return this;
         }
 
@@ -113,8 +152,8 @@ public final class GatewayNode {
          * @return GatewayNode object
          */
         public GatewayNode build() {
-            return new GatewayNode(checkNotNull(gatewayDeviceId), checkNotNull(gatewayExternalInterfaceNames),
-                    checkNotNull(dataIpAddress));
+            return new GatewayNode(checkNotNull(gatewayDeviceId), checkNotNull(uplinkIntf),
+                                   checkNotNull(dataIpAddress));
         }
     }
 }

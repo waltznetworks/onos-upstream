@@ -29,6 +29,10 @@ import org.apache.felix.scr.annotations.Service;
 import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.cfg.ConfigProperty;
 import org.onosproject.core.CoreService;
+import org.onosproject.net.device.DeviceEvent;
+import org.onosproject.net.device.DeviceEvent.Type;
+import org.onosproject.net.device.DeviceListener;
+import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.driver.DefaultDriverProviderService;
 import org.onosproject.net.driver.DriverService;
 import org.onosproject.openflow.controller.DefaultOpenFlowPacketContext;
@@ -73,6 +77,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -83,13 +88,14 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static org.onlab.util.Tools.groupedThreads;
+import static org.onosproject.openflow.controller.Dpid.dpid;
 
 @Component(immediate = true)
 @Service
 public class OpenFlowControllerImpl implements OpenFlowController {
     private static final String APP_ID = "org.onosproject.openflow-base";
     private static final String DEFAULT_OFPORT = "6633,6653";
-    private static final int DEFAULT_WORKER_THREADS = 16;
+    private static final int DEFAULT_WORKER_THREADS = 0;
 
     private static final Logger log =
             LoggerFactory.getLogger(OpenFlowControllerImpl.class);
@@ -107,12 +113,16 @@ public class OpenFlowControllerImpl implements OpenFlowController {
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected ComponentConfigService cfgService;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected DeviceService deviceService;
+
+
     @Property(name = "openflowPorts", value = DEFAULT_OFPORT,
             label = "Port numbers (comma separated) used by OpenFlow protocol; default is 6633,6653")
     private String openflowPorts = DEFAULT_OFPORT;
 
     @Property(name = "workerThreads", intValue = DEFAULT_WORKER_THREADS,
-            label = "Number of controller worker threads; default is 16")
+            label = "Number of controller worker threads")
     private int workerThreads = DEFAULT_WORKER_THREADS;
 
     @Property(name = "shouldIgnorePortDownMsg", boolValue = false,
@@ -125,6 +135,14 @@ public class OpenFlowControllerImpl implements OpenFlowController {
     private final ExecutorService executorBarrier =
         Executors.newFixedThreadPool(4, groupedThreads("onos/of", "event-barrier-%d", log));
 
+    //Separate executor thread for handling error messages and barrier replies for same failed
+    // transactions to avoid context switching of thread
+    protected ExecutorService executorErrorMsgs =
+            Executors.newSingleThreadExecutor(groupedThreads("onos/of", "event-error-msg-%d", log));
+
+    //concurrent hashmap to track failed transactions
+    protected ConcurrentMap<Long, Boolean> errorMsgs =
+            new ConcurrentHashMap<>();
     protected ConcurrentMap<Dpid, OpenFlowSwitch> connectedSwitches =
             new ConcurrentHashMap<>();
     protected ConcurrentMap<Dpid, OpenFlowSwitch> activeMasterSwitches =
@@ -158,11 +176,13 @@ public class OpenFlowControllerImpl implements OpenFlowController {
             ArrayListMultimap.create();
 
     private final Controller ctrl = new Controller();
+    private InternalDeviceListener listener = new InternalDeviceListener();
 
     @Activate
     public void activate(ComponentContext context) {
         coreService.registerApplication(APP_ID, this::cleanup);
         cfgService.registerProperties(getClass());
+        deviceService.addListener(listener);
         ctrl.setConfigParams(context.getProperties());
         ctrl.start(agent, driverService);
     }
@@ -179,6 +199,7 @@ public class OpenFlowControllerImpl implements OpenFlowController {
 
     @Deactivate
     public void deactivate() {
+        deviceService.removeListener(listener);
         cleanup();
         cfgService.unregisterProperties(getClass(), false);
     }
@@ -282,6 +303,8 @@ public class OpenFlowControllerImpl implements OpenFlowController {
         Collection<OFGroupDescStatsEntry> groupDescStats;
         Collection<OFPortStatsEntry> portStats;
 
+        OpenFlowSwitch sw = this.getSwitch(dpid);
+
         switch (msg.getType()) {
         case PORT_STATUS:
             OFPortStatus status = (OFPortStatus) msg;
@@ -297,9 +320,12 @@ public class OpenFlowControllerImpl implements OpenFlowController {
             }
             break;
         case PACKET_IN:
+            if (sw == null) {
+                log.error("Switch {} is not found", dpid);
+                break;
+            }
             OpenFlowPacketContext pktCtx = DefaultOpenFlowPacketContext
-            .packetContextFromPacketIn(this.getSwitch(dpid),
-                    (OFPacketIn) msg);
+            .packetContextFromPacketIn(sw, (OFPacketIn) msg);
             for (PacketListener p : ofPacketListener.values()) {
                 p.handlePacket(pktCtx);
             }
@@ -307,8 +333,12 @@ public class OpenFlowControllerImpl implements OpenFlowController {
         // TODO: Consider using separate threadpool for sensitive messages.
         //    ie. Back to back error could cause us to starve.
         case FLOW_REMOVED:
-        case ERROR:
             executorMsgs.execute(new OFMessageHandler(dpid, msg));
+            break;
+        case ERROR:
+            log.debug("Received error message from {}: {}", dpid, msg);
+            errorMsgs.putIfAbsent(msg.getXid(), true);
+            executorErrorMsgs.execute(new OFMessageHandler(dpid, msg));
             break;
         case STATS_REPLY:
             OFStatsReply reply = (OFStatsReply) msg;
@@ -368,7 +398,11 @@ public class OpenFlowControllerImpl implements OpenFlowController {
                     if (reply instanceof OFCalientFlowStatsReply) {
                         // Convert Calient flow statistics to regular flow stats
                         // TODO: parse remaining fields such as power levels etc. when we have proper monitoring API
-                        OFFlowStatsReply.Builder fsr = getSwitch(dpid).factory().buildFlowStatsReply();
+                        if (sw == null) {
+                            log.error("Switch {} is not found", dpid);
+                            break;
+                        }
+                        OFFlowStatsReply.Builder fsr = sw.factory().buildFlowStatsReply();
                         List<OFFlowStatsEntry> entries = new LinkedList<>();
                         for (OFCalientFlowStatsEntry entry : ((OFCalientFlowStatsReply) msg).getEntries()) {
 
@@ -383,7 +417,7 @@ public class OpenFlowControllerImpl implements OpenFlowController {
                                     .getFactory(msg.getVersion())
                                     .instructions()
                                     .applyActions(Collections.singletonList(action));
-                            OFFlowStatsEntry fs = getSwitch(dpid).factory().buildFlowStatsEntry()
+                            OFFlowStatsEntry fs = sw.factory().buildFlowStatsEntry()
                                     .setMatch(entry.getMatch())
                                     .setTableId(entry.getTableId())
                                     .setDurationSec(entry.getDurationSec())
@@ -416,15 +450,26 @@ public class OpenFlowControllerImpl implements OpenFlowController {
             }
             break;
         case BARRIER_REPLY:
-            executorBarrier.execute(new OFMessageHandler(dpid, msg));
+            if (errorMsgs.containsKey(msg.getXid())) {
+                //To make oferror msg handling and corresponding barrier reply serialized,
+                // executorErrorMsgs is used for both transaction
+                errorMsgs.remove(msg.getXid());
+                executorErrorMsgs.execute(new OFMessageHandler(dpid, msg));
+            } else {
+                executorBarrier.execute(new OFMessageHandler(dpid, msg));
+            }
             break;
         case EXPERIMENTER:
+            if (sw == null) {
+                log.error("Switch {} is not found", dpid);
+                break;
+            }
             long experimenter = ((OFExperimenter) msg).getExperimenter();
             if (experimenter == 0x748771) {
                 // LINC-OE port stats
                 OFCircuitPortStatus circuitPortStatus = (OFCircuitPortStatus) msg;
-                OFPortStatus.Builder portStatus = this.getSwitch(dpid).factory().buildPortStatus();
-                OFPortDesc.Builder portDesc = this.getSwitch(dpid).factory().buildPortDesc();
+                OFPortStatus.Builder portStatus = sw.factory().buildPortStatus();
+                OFPortDesc.Builder portDesc = sw.factory().buildPortDesc();
                 portDesc.setPortNo(circuitPortStatus.getPortNo())
                         .setHwAddr(circuitPortStatus.getHwAddr())
                         .setName(circuitPortStatus.getName())
@@ -502,6 +547,46 @@ public class OpenFlowControllerImpl implements OpenFlowController {
             return;
         }
         sw.setRole(role);
+    }
+
+    class InternalDeviceListener implements DeviceListener {
+
+        @Override
+        public boolean isRelevant(DeviceEvent event) {
+            return event.type() == Type.DEVICE_REMOVED;
+        }
+
+        @Override
+        public void event(DeviceEvent event) {
+            switch (event.type()) {
+            case DEVICE_ADDED:
+                break;
+            case DEVICE_AVAILABILITY_CHANGED:
+                break;
+            case DEVICE_REMOVED:
+                // Device administratively removed, disconnect
+                Optional.ofNullable(getSwitch(dpid(event.subject().id().uri())))
+                        .ifPresent(OpenFlowSwitch::disconnectSwitch);
+                break;
+            case DEVICE_SUSPENDED:
+                break;
+            case DEVICE_UPDATED:
+                break;
+            case PORT_ADDED:
+                break;
+            case PORT_REMOVED:
+                break;
+            case PORT_STATS_UPDATED:
+                break;
+            case PORT_UPDATED:
+                break;
+            default:
+                break;
+
+            }
+
+        }
+
     }
 
     /**

@@ -28,6 +28,7 @@ import org.onosproject.net.driver.AbstractHandlerBehaviour;
 import org.onosproject.net.driver.DriverHandler;
 import org.onosproject.ovsdb.controller.OvsdbBridge;
 import org.onosproject.ovsdb.controller.OvsdbClientService;
+import org.onosproject.ovsdb.controller.OvsdbConstant;
 import org.onosproject.ovsdb.controller.OvsdbController;
 import org.onosproject.ovsdb.controller.OvsdbNodeId;
 
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static org.onlab.util.Tools.delay;
 
@@ -82,7 +84,7 @@ public class OvsdbControllerConfig extends AbstractHandlerBehaviour implements C
         if (nodeIds.size() == 0) {
             //TODO decide what port?
             ovsController.connect(IpAddress.valueOf(targetIp),
-                                  targetPort == null ? TpPort.tpPort(6640) : targetPort);
+                                  targetPort == null ? TpPort.tpPort(OvsdbConstant.OVSDBPORT) : targetPort);
             delay(1000); //FIXME... connect is async
         }
         List<OvsdbClientService> clientServices = ovsController.getNodeIds().stream()
@@ -96,7 +98,9 @@ public class OvsdbControllerConfig extends AbstractHandlerBehaviour implements C
     }
 
     private static boolean dpidMatches(OvsdbBridge bridge, DeviceId deviceId) {
-        String bridgeDpid = "of:" + bridge.datapathId().value();
+        checkArgument(bridge.datapathId().isPresent());
+
+        String bridgeDpid = "of:" + bridge.datapathId().get();
         String ofDpid = deviceId.toString();
         return bridgeDpid.equals(ofDpid);
     }

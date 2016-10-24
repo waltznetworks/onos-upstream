@@ -37,6 +37,7 @@ import org.onosproject.net.DefaultPath;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.DisjointPath;
 import org.onosproject.net.Link;
+import org.onosproject.net.Link.Type;
 import org.onosproject.net.Path;
 import org.onosproject.net.provider.ProviderId;
 import org.onosproject.net.topology.ClusterId;
@@ -389,7 +390,11 @@ public class DefaultTopology extends AbstractModel implements Topology {
                 SUURBALLE.search(graph, srcV, dstV, weight, ALL_PATHS);
         ImmutableSet.Builder<DisjointPath> builder = ImmutableSet.builder();
         for (org.onlab.graph.Path<TopologyVertex, TopologyEdge> path : result.paths()) {
-            builder.add(networkDisjointPath((org.onlab.graph.DisjointPathPair<TopologyVertex, TopologyEdge>) path));
+            DisjointPath disjointPath =
+                    networkDisjointPath((org.onlab.graph.DisjointPathPair<TopologyVertex, TopologyEdge>) path);
+            if (disjointPath.backup() != null) {
+                builder.add(disjointPath);
+            }
         }
         return builder.build();
     }
@@ -420,7 +425,11 @@ public class DefaultTopology extends AbstractModel implements Topology {
                 srlg.search(graph, srcV, dstV, weight, ALL_PATHS);
         ImmutableSet.Builder<DisjointPath> builder = ImmutableSet.builder();
         for (org.onlab.graph.Path<TopologyVertex, TopologyEdge> path : result.paths()) {
-            builder.add(networkDisjointPath((org.onlab.graph.DisjointPathPair<TopologyVertex, TopologyEdge>) path));
+            DisjointPath disjointPath =
+                    networkDisjointPath((org.onlab.graph.DisjointPathPair<TopologyVertex, TopologyEdge>) path);
+            if (disjointPath.backup() != null) {
+                builder.add(disjointPath);
+            }
         }
         return builder.build();
     }
@@ -442,14 +451,17 @@ public class DefaultTopology extends AbstractModel implements Topology {
             riskProfile2.put(new TopologyEdge() {
                 Link cur = l;
 
+                @Override
                 public Link link() {
                     return cur;
                 }
 
+                @Override
                 public TopologyVertex src() {
                     return () -> src;
                 }
 
+                @Override
                 public TopologyVertex dst() {
                     return () -> dst;
                 }
@@ -478,6 +490,12 @@ public class DefaultTopology extends AbstractModel implements Topology {
     }
 
     private DisjointPath networkDisjointPath(DisjointPathPair<TopologyVertex, TopologyEdge> path) {
+        if (!path.hasBackup()) {
+            // There was no secondary path available.
+            return new DefaultDisjointPath(CORE_PROVIDER_ID,
+                                           (DefaultPath) networkPath(path.primary()),
+                                           null);
+        }
         return new DefaultDisjointPath(CORE_PROVIDER_ID,
                                        (DefaultPath) networkPath(path.primary()),
                                        (DefaultPath) networkPath(path.secondary()));
@@ -568,6 +586,12 @@ public class DefaultTopology extends AbstractModel implements Topology {
     private ImmutableSet<ConnectPoint> findInfrastructurePoints() {
         ImmutableSet.Builder<ConnectPoint> builder = ImmutableSet.builder();
         for (TopologyEdge edge : graph.getEdges()) {
+            if (edge.link().type() == Type.EDGE) {
+                // exclude EDGE link from infrastructure link
+                // - Device <-> Host
+                // - Device <-> remote domain Device
+                continue;
+            }
             builder.add(edge.link().src());
             builder.add(edge.link().dst());
         }

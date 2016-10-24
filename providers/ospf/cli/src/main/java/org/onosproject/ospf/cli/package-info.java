@@ -15,6 +15,6 @@
  */
 
 /**
- * ISIS cli implementation.
+ * OSPF cli implementation.
  */
 package org.onosproject.ospf.cli;

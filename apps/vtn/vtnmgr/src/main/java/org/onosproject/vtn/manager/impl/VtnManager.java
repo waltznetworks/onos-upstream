@@ -491,7 +491,7 @@ public class VtnManager implements VtnService {
     private void programTunnelConfig(DeviceId localDeviceId, IpAddress localIp,
                                      DriverHandler localHandler) {
         if (mastershipService.isLocalMaster(localDeviceId)) {
-            VtnConfig.applyTunnelConfig(localHandler, localIp, IpAddress.valueOf(DEFAULT_IP));
+            VtnConfig.applyTunnelConfig(localHandler, localIp);
             log.info("Add tunnel on {}", localIp);
         }
     }
@@ -530,7 +530,7 @@ public class VtnManager implements VtnService {
         Iterable<Host> allHosts = hostService.getHosts();
         String tunnelName = "vxlan-" + DEFAULT_IP;
         if (allHosts != null) {
-            Sets.newHashSet(allHosts).stream().forEach(host -> {
+            Sets.newHashSet(allHosts).forEach(host -> {
                 MacAddress hostMac = host.mac();
                 String ifaceId = host.annotations().value(IFACEID);
                 if (ifaceId == null) {
@@ -549,7 +549,7 @@ public class VtnManager implements VtnService {
                         .getControllerIpOfSwitch(remoteDevice);
                 if (remoteControllerIp == null) {
                     log.error("Can't find remote controller of device: {}",
-                              remoteDeviceId.toString());
+                            remoteDeviceId.toString());
                     return;
                 }
                 IpAddress remoteIpAddress = IpAddress
@@ -557,10 +557,10 @@ public class VtnManager implements VtnService {
                 ports.stream()
                         .filter(p -> p.name().equalsIgnoreCase(tunnelName))
                         .forEach(p -> {
-                    l2ForwardService
-                            .programTunnelOut(device.id(), segmentationId, p,
-                                              hostMac, type, remoteIpAddress);
-                });
+                            l2ForwardService
+                                    .programTunnelOut(device.id(), segmentationId, p,
+                                            hostMac, type, remoteIpAddress);
+                        });
             });
         }
     }
@@ -719,24 +719,17 @@ public class VtnManager implements VtnService {
                 .filter(d -> !("ovsdb:" + ipAddress).equals(d.id().toString()))
                 .forEach(d -> {
                     DriverHandler handler = driverService.createHandler(d.id());
-                    BridgeConfig bridgeConfig = handler
-                            .behaviour(BridgeConfig.class);
-                    Collection<BridgeDescription> bridgeDescriptions = bridgeConfig
-                            .getBridges();
-                    Iterator<BridgeDescription> it = bridgeDescriptions
-                            .iterator();
-                    while (it.hasNext()) {
-                        BridgeDescription sw = it.next();
-                        if (sw.bridgeName().name().equals(VtnConfig.DEFAULT_BRIDGE_NAME)) {
-                            List<Port> ports = deviceService.getPorts(sw.deviceId());
-                            ports.stream()
-                                    .filter(p -> p.annotations().value(AnnotationKeys.PORT_NAME)
-                                            .equalsIgnoreCase(tunnelName))
-                                    .forEach(p -> {
-                                l2ForwardService.programTunnelOut(sw.deviceId(),
-                                                                  segmentationId, p.number(),
-                                                                  dstMac, type, ipAddress);
-                            });
+                    BridgeConfig bridgeConfig = handler.behaviour(BridgeConfig.class);
+                    Collection<BridgeDescription> bridgeDescriptions = bridgeConfig.getBridges();
+                    for (BridgeDescription sw : bridgeDescriptions) {
+                        if (sw.name().equals(VtnConfig.DEFAULT_BRIDGE_NAME) &&
+                                sw.deviceId().isPresent()) {
+                            List<Port> ports = deviceService.getPorts(sw.deviceId().get());
+                            ports.stream().filter(p -> p.annotations().value(AnnotationKeys.PORT_NAME)
+                                    .equalsIgnoreCase(tunnelName))
+                                    .forEach(p -> l2ForwardService.programTunnelOut(
+                                            sw.deviceId().get(), segmentationId, p.number(),
+                                            dstMac, type, ipAddress));
                             break;
                         }
                     }
@@ -906,7 +899,7 @@ public class VtnManager implements VtnService {
             programRouterInterface(routerInf, operation);
             if (interfacesSet.size() == 1) {
                 routerInfFlagOfTenantRouter.remove(tenantRouter);
-                interfacesSet.stream().forEach(r -> {
+                interfacesSet.forEach(r -> {
                     programRouterInterface(r, operation);
                 });
             }
@@ -968,7 +961,7 @@ public class VtnManager implements VtnService {
                     TenantRouter tenantRouter = TenantRouter
                             .tenantRouter(r.tenantId(), r.routerId());
                     routerInfFlagOfTenantRouter.put(tenantRouter, true);
-                    interfacesSet.stream().forEach(f -> {
+                    interfacesSet.forEach(f -> {
                         programRouterInterface(f, operation);
                     });
                     break;
@@ -984,7 +977,7 @@ public class VtnManager implements VtnService {
         SegmentationId l3vni = vtnRscService.getL3vni(tenantRouter);
         // Get all the host of the subnet
         Map<HostId, Host> hosts = hostsOfSubnet.get(routerInf.subnetId());
-        hosts.values().stream().forEach(h -> {
+        hosts.values().forEach(h -> {
             applyEastWestL3Flows(h, l3vni, operation);
         });
     }
@@ -1299,7 +1292,7 @@ public class VtnManager implements VtnService {
                 .stream().filter(r -> r.tenantId().equals(tenantId))
                 .filter(r -> r.subnetId().equals(subnetId))
                 .collect(Collectors.toSet());
-        hostInterfaces.stream().forEach(routerInf -> {
+        hostInterfaces.forEach(routerInf -> {
             Set<RouterInterface> interfacesSet = Sets.newHashSet(interfaces)
                     .stream().filter(r -> r.tenantId().equals(tenantId))
                     .filter(r -> r.routerId().equals(routerInf.routerId()))

@@ -31,29 +31,43 @@ public interface BridgeConfig extends HandlerBehaviour {
     /**
      * Add a bridge.
      *
+     * @deprecated version 1.7.0 - Hummingbird
      * @param bridgeName bridge name
      */
+    @Deprecated
     void addBridge(BridgeName bridgeName);
 
     /**
      * Adds a bridge with given bridge name, dpid and exPortName.
      *
+     * @deprecated version 1.7.0 - Hummingbird
      * @param bridgeName bridge name
      * @param dpid dpid
      * @param exPortName external port name
      */
+    @Deprecated
     void addBridge(BridgeName bridgeName, String dpid, String exPortName);
 
     /**
      * Adds a bridge with given bridge name and dpid, and sets the controller
      * of the bridge with given controllers.
      *
+     * @deprecated version 1.7.0 - Hummingbird
      * @param bridgeName bridge name
      * @param dpid dpid
      * @param controllers list of controller
      * @return true if succeeds, fail otherwise
      */
+    @Deprecated
     boolean addBridge(BridgeName bridgeName, String dpid, List<ControllerInfo> controllers);
+
+    /**
+     * Adds a bridge with a given description.
+     *
+     * @param bridgeDescription bridge description
+     * @return true if succeeds, or false
+     */
+    boolean addBridge(BridgeDescription bridgeDescription);
 
     /**
      * Remove a bridge.
@@ -70,30 +84,12 @@ public interface BridgeConfig extends HandlerBehaviour {
     Collection<BridgeDescription> getBridges();
 
     /**
-     * Add a logical/virtual port.
-     * @deprecated version 1.5.0 - Falcon.
-     *
-     * @param port port number
-     */
-    @Deprecated
-    void addPort(PortDescription port);
-
-    /**
      * Adds a port to a given bridge.
      *
      * @param bridgeName bridge name
      * @param portName port name
      */
     void addPort(BridgeName bridgeName, String portName);
-
-    /**
-     * Delete a logical/virtual port.
-     * @deprecated version 1.5.0 - Falcon.
-     *
-     * @param port port number
-     */
-    @Deprecated
-    void deletePort(PortDescription port);
 
     /**
      * Removes a port from a given bridge.

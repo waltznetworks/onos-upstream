@@ -20,8 +20,7 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos-apps</artifactId>
-        <version>1.6.0</version>
-        <relativePath>../pom.xml</relativePath>
+        <version>1.7.1-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -33,6 +32,7 @@
     <modules>
         <module>app</module>
         <module>pceweb</module>
+        <module>pcerest</module>
     </modules>
 
 </project>

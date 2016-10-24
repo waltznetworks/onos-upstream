@@ -24,9 +24,8 @@ import org.onosproject.store.service.TransactionalMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.onosproject.store.resource.impl.ConsistentResourceStore.SERIALIZER;
 
@@ -54,14 +53,14 @@ class TransactionalDiscreteResourceSubStore {
         return values.lookup(id);
     }
 
-    boolean register(DiscreteResourceId key, List<DiscreteResource> values) {
+    boolean register(DiscreteResourceId parent, Set<DiscreteResource> resources) {
         // short-circuit: receiving empty resource is regarded as success
-        if (values.isEmpty()) {
+        if (resources.isEmpty()) {
             return true;
         }
 
-        DiscreteResources requested = DiscreteResources.of(new LinkedHashSet<>(values));
-        DiscreteResources oldValues = childMap.putIfAbsent(key, requested);
+        DiscreteResources requested = DiscreteResources.of(resources);
+        DiscreteResources oldValues = childMap.putIfAbsent(parent, requested);
         if (oldValues == null) {
             return true;
         }
@@ -74,37 +73,38 @@ class TransactionalDiscreteResourceSubStore {
         }
 
         DiscreteResources newValues = oldValues.add(addedValues);
-        return childMap.replace(key, oldValues, newValues);
+        return childMap.replace(parent, oldValues, newValues);
     }
 
-    boolean unregister(DiscreteResourceId key, List<DiscreteResource> values) {
+    boolean unregister(DiscreteResourceId parent, Set<DiscreteResource> resources) {
         // short-circuit: receiving empty resource is regarded as success
-        if (values.isEmpty()) {
+        if (resources.isEmpty()) {
             return true;
         }
 
         // even if one of the resources is allocated to a consumer,
         // all unregistrations are regarded as failure
-        boolean allocated = values.stream().anyMatch(x -> isAllocated(x.id()));
+        boolean allocated = resources.stream().anyMatch(x -> isAllocated(x.id()));
         if (allocated) {
-            log.warn("Failed to unregister {}: allocation exists", key);
+            log.warn("Failed to unregister {}: allocation exists", parent);
             return false;
         }
 
-        DiscreteResources oldValues = childMap.putIfAbsent(key, DiscreteResources.empty());
+        DiscreteResources oldValues = childMap.putIfAbsent(parent, DiscreteResources.empty());
         if (oldValues == null) {
-            log.trace("No-Op removing values. key {} did not exist", key);
+            log.trace("No-Op removing values. key {} did not exist", parent);
             return true;
         }
 
-        if (!oldValues.containsAny(values)) {
+        if (!oldValues.containsAny(resources)) {
             // don't write map because none of the values are stored
-            log.trace("No-Op removing values. key {} did not contain {}", key, values);
+            log.trace("No-Op removing values. key {} did not contain {}", parent, resources);
             return true;
         }
 
-        DiscreteResources newValues = oldValues.remove(values);
-        return childMap.replace(key, oldValues, newValues);
+        DiscreteResources requested = DiscreteResources.of(resources);
+        DiscreteResources newValues = oldValues.difference(requested);
+        return childMap.replace(parent, oldValues, newValues);
     }
 
     private boolean isAllocated(DiscreteResourceId id) {

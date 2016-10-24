@@ -22,8 +22,8 @@ import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
-import org.onlab.util.Tools;
 import org.onlab.util.KryoNamespace;
+import org.onlab.util.Tools;
 import org.onosproject.net.resource.ContinuousResource;
 import org.onosproject.net.resource.ContinuousResourceId;
 import org.onosproject.net.resource.DiscreteResource;
@@ -48,6 +48,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -83,10 +84,6 @@ public class ConsistentResourceStore extends AbstractStore<ResourceEvent, Resour
             .register(MplsLabelCodec.class)
             .build());
 
-    // TODO: We should provide centralized values for this
-    static final int MAX_RETRIES = 5;
-    static final int RETRY_DELAY = 1_000; // millis
-
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected StorageService service;
 
@@ -116,7 +113,7 @@ public class ConsistentResourceStore extends AbstractStore<ResourceEvent, Resour
     }
 
     @Override
-    public boolean register(List<Resource> resources) {
+    public boolean register(List<? extends Resource> resources) {
         checkNotNull(resources);
         if (log.isTraceEnabled()) {
             resources.forEach(r -> log.trace("registering {}", r));
@@ -158,7 +155,7 @@ public class ConsistentResourceStore extends AbstractStore<ResourceEvent, Resour
     }
 
     @Override
-    public boolean unregister(List<ResourceId> ids) {
+    public boolean unregister(List<? extends ResourceId> ids) {
         checkNotNull(ids);
 
         TransactionContext tx = service.transactionContextBuilder().build();
@@ -207,7 +204,7 @@ public class ConsistentResourceStore extends AbstractStore<ResourceEvent, Resour
     }
 
     @Override
-    public boolean allocate(List<Resource> resources, ResourceConsumer consumer) {
+    public boolean allocate(List<? extends Resource> resources, ResourceConsumer consumer) {
         checkNotNull(resources);
         checkNotNull(consumer);
 
@@ -299,6 +296,17 @@ public class ConsistentResourceStore extends AbstractStore<ResourceEvent, Resour
                 .build();
     }
 
+    @Override
+    public <T> Set<Resource> getChildResources(DiscreteResourceId parent, Class<T> cls) {
+        checkNotNull(parent);
+        checkNotNull(cls);
+
+        return ImmutableSet.<Resource>builder()
+                .addAll(discreteStore.getChildResources(parent, cls))
+                .addAll(continuousStore.getChildResources(parent, cls))
+                .build();
+    }
+
     // computational complexity: O(n) where n is the number of the children of the parent
     @Override
     public <T> Collection<Resource> getAllocatedResources(DiscreteResourceId parent, Class<T> cls) {
@@ -326,28 +334,28 @@ public class ConsistentResourceStore extends AbstractStore<ResourceEvent, Resour
      * Appends the values to the existing values associated with the specified key.
      * If the map already has all the given values, appending will not happen.
      *
-     * @param key    key specifying values
-     * @param values values to be appended
+     * @param parent    resource ID of the parent under which the given resources are registered
+     * @param resources resources to be registered
      * @return true if the operation succeeds, false otherwise.
      */
     // computational complexity: O(n) where n is the number of the specified value
     private boolean register(TransactionalDiscreteResourceSubStore discreteTxStore,
                              TransactionalContinuousResourceSubStore continuousTxStore,
-                             DiscreteResourceId key, List<Resource> values) {
+                             DiscreteResourceId parent, List<Resource> resources) {
         // it's assumed that the passed "values" is non-empty
 
         // This is 2-pass scan. Nicer to have 1-pass scan
-        List<DiscreteResource> discreteValues = values.stream()
+        Set<DiscreteResource> discreteResources = resources.stream()
                 .filter(x -> x instanceof DiscreteResource)
                 .map(x -> (DiscreteResource) x)
-                .collect(Collectors.toList());
-        List<ContinuousResource> continuousValues = values.stream()
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<ContinuousResource> continuousResources = resources.stream()
                 .filter(x -> x instanceof ContinuousResource)
                 .map(x -> (ContinuousResource) x)
-                .collect(Collectors.toList());
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        return discreteTxStore.register(key, discreteValues)
-                && continuousTxStore.register(key, continuousValues);
+        return discreteTxStore.register(parent, discreteResources)
+                && continuousTxStore.register(parent, continuousResources);
     }
 
     /**
@@ -356,26 +364,26 @@ public class ConsistentResourceStore extends AbstractStore<ResourceEvent, Resour
      *
      * @param discreteTxStore   map holding multiple discrete resources for a key
      * @param continuousTxStore map holding multiple continuous resources for a key
-     * @param key               key specifying values
-     * @param values            values to be removed
+     * @param parent            resource ID of the parent under which the given resources are unregistered
+     * @param resources         resources to be unregistered
      * @return true if the operation succeeds, false otherwise
      */
     private boolean unregister(TransactionalDiscreteResourceSubStore discreteTxStore,
                                TransactionalContinuousResourceSubStore continuousTxStore,
-                               DiscreteResourceId key, List<Resource> values) {
+                               DiscreteResourceId parent, List<Resource> resources) {
         // it's assumed that the passed "values" is non-empty
 
         // This is 2-pass scan. Nicer to have 1-pass scan
-        List<DiscreteResource> discreteValues = values.stream()
+        Set<DiscreteResource> discreteResources = resources.stream()
                 .filter(x -> x instanceof DiscreteResource)
                 .map(x -> (DiscreteResource) x)
-                .collect(Collectors.toList());
-        List<ContinuousResource> continuousValues = values.stream()
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<ContinuousResource> continuousResources = resources.stream()
                 .filter(x -> x instanceof ContinuousResource)
                 .map(x -> (ContinuousResource) x)
-                .collect(Collectors.toList());
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        return discreteTxStore.unregister(key, discreteValues)
-                && continuousTxStore.unregister(key, continuousValues);
+        return discreteTxStore.unregister(parent, discreteResources)
+                && continuousTxStore.unregister(parent, continuousResources);
     }
 }

@@ -658,7 +658,7 @@ public class LldpLinkProviderTest {
 
             Ethernet ethPacket = new Ethernet();
             ethPacket.setEtherType(Ethernet.TYPE_LLDP);
-            ethPacket.setDestinationMACAddress(ONOSLLDP.LLDP_NICIRA);
+            ethPacket.setDestinationMACAddress(ONOSLLDP.LLDP_ONLAB);
             ethPacket.setPayload(lldp);
             ethPacket.setPad(true);
 

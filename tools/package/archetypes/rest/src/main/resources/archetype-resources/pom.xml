@@ -32,7 +32,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <onos.version>1.6.0</onos.version>
+        <onos.version>1.7.1-SNAPSHOT</onos.version>
 
         <web.context>/onos/${artifactId}</web.context>
         <api.version>1.0.0</api.version>
@@ -193,7 +193,7 @@
             <plugin>
                 <groupId>org.onosproject</groupId>
                 <artifactId>onos-maven-plugin</artifactId>
-                <version>1.9</version>
+                <version>1.10</version>
                 <executions>
                     <execution>
                         <id>cfg</id>

@@ -22,7 +22,7 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos-apps</artifactId>
-        <version>1.6.0</version>
+        <version>1.7.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>onos-app-openstacknode</artifactId>
@@ -38,7 +38,8 @@
         <onos.app.url>http://onosproject.org</onos.app.url>
         <onos.app.readme>SONA Openstack Node Bootstrap Application</onos.app.readme>
         <onos.app.requires>
-            org.onosproject.ovsdb
+            org.onosproject.ovsdb-base,
+            org.onosproject.drivers.ovsdb
         </onos.app.requires>
     </properties>
 
@@ -58,8 +59,12 @@
         </dependency>
         <dependency>
             <groupId>org.onosproject</groupId>
-            <artifactId>onos-ovsdb-api</artifactId>
+            <artifactId>onos-cli</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.onosproject</groupId>
+            <artifactId>onos-ovsdb-api</artifactId>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -68,6 +73,10 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.karaf.shell</groupId>
+            <artifactId>org.apache.karaf.shell.console</artifactId>
         </dependency>
     </dependencies>
 </project>

@@ -15,6 +15,8 @@
  */
 package org.onosproject.driver.pipeline;
 
+import static org.slf4j.LoggerFactory.getLogger;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -42,6 +44,7 @@ import org.onosproject.net.flowobjective.FilteringObjective;
 import org.onosproject.net.flowobjective.ForwardingObjective;
 import org.onosproject.net.flowobjective.ObjectiveError;
 import org.onosproject.net.group.Group;
+import org.slf4j.Logger;
 
 /**
  * Spring-open driver implementation for Dell hardware switches.
@@ -54,6 +57,8 @@ public class SpringOpenTTPDell extends SpringOpenTTP {
     private static final int DELL_TABLE_IPV4_UNICAST = 30;
     private static final int DELL_TABLE_MPLS = 25;
     private static final int DELL_TABLE_ACL = 40;
+
+    private final Logger log = getLogger(getClass());
 
     //TODO: Store this info in the distributed store.
     private MacAddress deviceTMac = null;
@@ -205,7 +210,8 @@ public class SpringOpenTTPDell extends SpringOpenTTP {
     @Override
     protected List<FlowRule> processVlanIdFilter(VlanIdCriterion vlanIdCriterion,
                                                  FilteringObjective filt,
-                                                 VlanId assignedVlan,
+                                                 VlanId assignedVlan, VlanId modifiedVlan, VlanId pushedVlan,
+                                                 boolean popVlan, boolean pushVlan,
                                                  ApplicationId applicationId) {
         log.debug("For now not adding any VLAN rules "
                 + "into Dell switches as it is ignoring");

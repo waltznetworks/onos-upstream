@@ -17,13 +17,9 @@
           description="Network single point to multi point intent connectivity test">
     <!-- TODO: parametrize this via recipes -->
     <group name="S2M-Intent-Connectivity">
-        <step name="S2M-Intent.Uninstall-Reactive-Forwarding"
-              exec="onos ${OC1} app deactivate org.onosproject.fwd org.onosproject.ifwd"/>
-        <step name="S2M-Intent.Check-Apps" requires="^"
-              exec="onos-check-apps ${OC1} fwd,ifwd excludes"/>
 
         <!-- Create a single point to three points intent -->
-        <step name="S2M-Intent.Create-Intent-forward" requires="^"
+        <step name="S2M-Intent.Create-Intent-forward"
               exec="onos-create-intent ${OC1} forward single-to-multi of:0000000000000011/1 of:0000000000000014/1 of:0000000000000002/1 of:000000000000000E/1"/>
 
         <!-- Create back links from the 3 points back to the source -->
@@ -64,12 +60,12 @@
 
         <!-- Clean up intents -->
         <step name="S2M-Intent.Remove-Intent-forward" requires="~S2M-Intent.Ping-3-back"
-              exec="onos ${OC1} remove-intent -p org.onosproject.cli forward"/>
+              exec="onos -f ${OC1} remove-intent -p org.onosproject.cli forward"/>
         <step name="S2M-Intent.Remove-Intent-back1" requires="~S2M-Intent.Ping-3-back"
-              exec="onos ${OC1} remove-intent -p org.onosproject.cli back1"/>
+              exec="onos -f ${OC1} remove-intent -p org.onosproject.cli back1"/>
         <step name="S2M-Intent.Remove-Intent-back2" requires="~S2M-Intent.Ping-3-back"
-              exec="onos ${OC1} remove-intent -p org.onosproject.cli back2"/>
+              exec="onos -f ${OC1} remove-intent -p org.onosproject.cli back2"/>
         <step name="S2M-Intent.Remove-Intent-back3" requires="~S2M-Intent.Ping-3-back"
-              exec="onos ${OC1} remove-intent -p org.onosproject.cli back3"/>
+              exec="onos -f ${OC1} remove-intent -p org.onosproject.cli back3"/>
     </group>
 </scenario>

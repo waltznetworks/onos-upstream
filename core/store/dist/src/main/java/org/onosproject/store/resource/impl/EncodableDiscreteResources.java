@@ -15,6 +15,8 @@
  */
 package org.onosproject.store.resource.impl;
 
+import com.google.common.base.MoreObjects;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import org.onosproject.net.resource.DiscreteResource;
 import org.onosproject.net.resource.DiscreteResourceCodec;
@@ -23,11 +25,13 @@ import org.onosproject.net.resource.Resources;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * A set of discrete resources that can be encoded as integers.
@@ -35,7 +39,7 @@ import java.util.stream.Collectors;
 final class EncodableDiscreteResources implements DiscreteResources {
     private static final Codecs CODECS = Codecs.getInstance();
     private final DiscreteResource parent;
-    private final Map<Class<?>, EncodedDiscreteResources> values;
+    private final Map<Class<?>, EncodedDiscreteResources> map;
 
     private static Class<?> getClass(DiscreteResource resource) {
         return resource.valueAs(Object.class).map(Object::getClass).get();
@@ -63,62 +67,110 @@ final class EncodableDiscreteResources implements DiscreteResources {
         return new EncodableDiscreteResources(parent, values);
     }
 
-    private EncodableDiscreteResources(DiscreteResource parent, Map<Class<?>, EncodedDiscreteResources> values) {
-        this.parent = parent;
-        this.values = values;
+    private static DiscreteResources of(DiscreteResource parent, Map<Class<?>, EncodedDiscreteResources> map) {
+        if (isEmpty(map)) {
+            return DiscreteResources.empty();
+        }
+        return new EncodableDiscreteResources(parent, map);
     }
 
-    // for serializer
-    private EncodableDiscreteResources() {
-        this.parent = null;
-        this.values = null;
+    private static boolean isEmpty(Map<Class<?>, EncodedDiscreteResources> map) {
+        return map.values().stream().allMatch(EncodedDiscreteResources::isEmpty);
+    }
+
+    EncodableDiscreteResources(DiscreteResource parent, Map<Class<?>, EncodedDiscreteResources> map) {
+        this.parent = parent;
+        this.map = map;
     }
 
     @Override
     public Optional<DiscreteResource> lookup(DiscreteResourceId id) {
+        if (!id.parent().filter(parent.id()::equals).isPresent()) {
+            return Optional.empty();
+        }
         DiscreteResource resource = Resources.discrete(id).resource();
         Class<?> cls = getClass(resource);
-        return Optional.ofNullable(values.get(cls))
+        return Optional.ofNullable(map.get(cls))
                 .filter(x -> x.contains(resource))
                 .map(x -> resource);
     }
 
     @Override
     public DiscreteResources difference(DiscreteResources other) {
-        Set<DiscreteResource> diff = Sets.difference(values(), other.values());
+        if (other instanceof EncodableDiscreteResources) {
+            EncodableDiscreteResources cast = (EncodableDiscreteResources) other;
 
-        return of(parent, diff);
+            Map<Class<?>, EncodedDiscreteResources> newMap = new LinkedHashMap<>();
+            for (Entry<Class<?>, EncodedDiscreteResources> e : this.map.entrySet()) {
+                Class<?> key = e.getKey();
+                EncodedDiscreteResources thisValues = e.getValue();
+                EncodedDiscreteResources otherValues = cast.map.get(key);
+                if (otherValues == null) {
+                    newMap.put(key, thisValues);
+                    continue;
+                }
+                EncodedDiscreteResources diff = thisValues.difference(otherValues);
+                // omit empty resources from a new resource set
+                // empty EncodedDiscreteResources can't deserialize due to
+                // inability to reproduce a Class<?> instance from the serialized data
+                if (diff.isEmpty()) {
+                    continue;
+                }
+                newMap.put(key, diff);
+            }
+
+            return of(parent, newMap);
+        } else if (other instanceof EmptyDiscreteResources) {
+            return this;
+        }
+
+        return DiscreteResources.of(Sets.difference(values(), other.values()));
     }
 
     @Override
     public boolean isEmpty() {
-        return values.values().stream()
-                .allMatch(x -> x.isEmpty());
+        return isEmpty(map);
     }
 
     @Override
-    public boolean containsAny(List<DiscreteResource> other) {
+    public boolean containsAny(Set<DiscreteResource> other) {
         return other.stream()
-                .anyMatch(x -> values().contains(x));
+                .filter(x -> map.containsKey(getClass(x)))
+                .anyMatch(x -> map.get(getClass(x)).contains(x));
     }
 
     @Override
     public DiscreteResources add(DiscreteResources other) {
-        Set<DiscreteResource> union = Sets.union(values(), other.values());
+        if (other instanceof EncodableDiscreteResources) {
+            EncodableDiscreteResources cast = (EncodableDiscreteResources) other;
+            LinkedHashMap<Class<?>, EncodedDiscreteResources> newMap =
+                    Stream.concat(this.map.entrySet().stream(), cast.map.entrySet().stream())
+                            .collect(Collectors.toMap(
+                                    Map.Entry::getKey,
+                                    Map.Entry::getValue,
+                                    EncodedDiscreteResources::add,
+                                    LinkedHashMap::new
+                            ));
+            return of(parent, newMap);
+        } else if (other instanceof EmptyDiscreteResources) {
+            return this;
+        }
 
-        return of(parent, union);
-    }
-
-    @Override
-    public DiscreteResources remove(List<DiscreteResource> removed) {
-        return of(parent, Sets.difference(values(), new LinkedHashSet<>(removed)));
+        return DiscreteResources.of(Sets.union(this.values(), other.values()));
     }
 
     @Override
     public Set<DiscreteResource> values() {
-        return values.values().stream()
+        return map.values().stream()
                 .flatMap(x -> x.values(parent.id()).stream())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    @Override
+    public <T> Set<DiscreteResource> valuesOf(Class<T> cls) {
+        return Optional.ofNullable(map.get(cls))
+                .map(x -> x.values(parent.id()))
+                .orElse(ImmutableSet.of());
     }
 
     DiscreteResource parent() {
@@ -126,6 +178,31 @@ final class EncodableDiscreteResources implements DiscreteResources {
     }
 
     Map<Class<?>, EncodedDiscreteResources> rawValues() {
-        return values;
+        return map;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(parent, map);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null || getClass() != obj.getClass()) {
+            return false;
+        }
+        final EncodableDiscreteResources other = (EncodableDiscreteResources) obj;
+        return Objects.equals(this.parent, other.parent)
+                && Objects.equals(this.map, other.map);
+    }
+
+    @Override
+    public String toString() {
+        return MoreObjects.toStringHelper(this)
+                .add("values", values())
+                .toString();
     }
 }

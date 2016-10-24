@@ -16,7 +16,9 @@
 package org.onosproject.net.intent.impl.compiler;
 
 import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.SetMultimap;
+import com.google.common.collect.Sets;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
@@ -24,29 +26,32 @@ import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
-import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.DeviceId;
-import org.onosproject.net.Link;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.flow.DefaultFlowRule;
-import org.onosproject.net.flow.DefaultTrafficSelector;
-import org.onosproject.net.flow.DefaultTrafficTreatment;
 import org.onosproject.net.flow.FlowRule;
-import org.onosproject.net.flow.TrafficSelector;
-import org.onosproject.net.flow.TrafficTreatment;
 import org.onosproject.net.intent.FlowRuleIntent;
 import org.onosproject.net.intent.Intent;
 import org.onosproject.net.intent.IntentCompiler;
 import org.onosproject.net.intent.LinkCollectionIntent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
+/**
+ * Compiler to produce flow rules from link collections.
+ */
 @Component(immediate = true)
-public class LinkCollectionIntentCompiler implements IntentCompiler<LinkCollectionIntent> {
+public class LinkCollectionIntentCompiler
+        extends LinkCollectionCompiler<FlowRule>
+        implements IntentCompiler<LinkCollectionIntent> {
+
+    private static Logger log = LoggerFactory.getLogger(LinkCollectionIntentCompiler.class);
+
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected IntentConfigurableRegistrator registrator;
@@ -69,66 +74,50 @@ public class LinkCollectionIntentCompiler implements IntentCompiler<LinkCollecti
 
     @Override
     public List<Intent> compile(LinkCollectionIntent intent, List<Intent> installable) {
+
         SetMultimap<DeviceId, PortNumber> inputPorts = HashMultimap.create();
         SetMultimap<DeviceId, PortNumber> outputPorts = HashMultimap.create();
 
-        for (Link link : intent.links()) {
-            inputPorts.put(link.dst().deviceId(), link.dst().port());
-            outputPorts.put(link.src().deviceId(), link.src().port());
-        }
-
-        for (ConnectPoint ingressPoint : intent.ingressPoints()) {
-            inputPorts.put(ingressPoint.deviceId(), ingressPoint.port());
-        }
-
-        for (ConnectPoint egressPoint : intent.egressPoints()) {
-            outputPorts.put(egressPoint.deviceId(), egressPoint.port());
-        }
+        computePorts(intent, inputPorts, outputPorts);
 
         List<FlowRule> rules = new ArrayList<>();
-        for (DeviceId deviceId: outputPorts.keys()) {
+        for (DeviceId deviceId: outputPorts.keySet()) {
             rules.addAll(createRules(intent, deviceId, inputPorts.get(deviceId), outputPorts.get(deviceId)));
         }
         return Collections.singletonList(new FlowRuleIntent(appId, rules, intent.resources()));
     }
 
-    private List<FlowRule> createRules(LinkCollectionIntent intent, DeviceId deviceId,
+    @Override
+    protected List<FlowRule> createRules(LinkCollectionIntent intent, DeviceId deviceId,
                                        Set<PortNumber> inPorts, Set<PortNumber> outPorts) {
-        Set<PortNumber> ingressPorts = intent.ingressPoints().stream()
-                .filter(point -> point.deviceId().equals(deviceId))
-                .map(ConnectPoint::port)
-                .collect(Collectors.toSet());
 
-        TrafficTreatment.Builder defaultTreatmentBuilder = DefaultTrafficTreatment.builder();
-        outPorts.stream()
-                .forEach(defaultTreatmentBuilder::setOutput);
-        TrafficTreatment defaultTreatment = defaultTreatmentBuilder.build();
+        Set<PortNumber> ingressPorts = Sets.newHashSet();
+        Set<PortNumber> egressPorts = Sets.newHashSet();
 
-        TrafficTreatment.Builder ingressTreatmentBuilder = DefaultTrafficTreatment.builder(intent.treatment());
-        outPorts.stream()
-                .forEach(ingressTreatmentBuilder::setOutput);
-        TrafficTreatment ingressTreatment = ingressTreatmentBuilder.build();
+        computePorts(intent, deviceId, ingressPorts, egressPorts);
 
         List<FlowRule> rules = new ArrayList<>(inPorts.size());
-        for (PortNumber inPort: inPorts) {
-            TrafficSelector selector = DefaultTrafficSelector.builder(intent.selector()).matchInPort(inPort).build();
-            TrafficTreatment treatment;
-            if (ingressPorts.contains(inPort)) {
-                treatment = ingressTreatment;
-            } else {
-                treatment = defaultTreatment;
-            }
+        Set<PortNumber> copyIngressPorts = ImmutableSet.copyOf(ingressPorts);
+        Set<PortNumber> copyEgressPorts = ImmutableSet.copyOf(egressPorts);
 
-            FlowRule rule = DefaultFlowRule.builder()
-                                .forDevice(deviceId)
-                                .withSelector(selector)
-                                .withTreatment(treatment)
-                                .withPriority(intent.priority())
-                                .fromApp(appId)
-                                .makePermanent()
-                                .build();
-            rules.add(rule);
-        }
+        inPorts.forEach(inport -> {
+                ForwardingInstructions instructions = this.createForwardingInstructions(intent,
+                                                                                        inport,
+                                                                                        deviceId,
+                                                                                        outPorts,
+                                                                                        copyIngressPorts,
+                                                                                        copyEgressPorts);
+                FlowRule rule = DefaultFlowRule.builder()
+                        .forDevice(deviceId)
+                        .withSelector(instructions.selector())
+                        .withTreatment(instructions.treatment())
+                        .withPriority(intent.priority())
+                        .fromApp(appId)
+                        .makePermanent()
+                        .build();
+                rules.add(rule);
+            }
+        );
 
         return rules;
     }

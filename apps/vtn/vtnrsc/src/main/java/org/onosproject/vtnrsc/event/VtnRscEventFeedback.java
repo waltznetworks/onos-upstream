@@ -15,19 +15,19 @@
  */
 package org.onosproject.vtnrsc.event;
 
-import static com.google.common.base.MoreObjects.toStringHelper;
-import static com.google.common.base.Preconditions.checkNotNull;
-
 import java.util.Objects;
 
 import org.onosproject.vtnrsc.FloatingIp;
-import org.onosproject.vtnrsc.FlowClassifier;
-import org.onosproject.vtnrsc.PortChain;
-import org.onosproject.vtnrsc.PortPair;
-import org.onosproject.vtnrsc.PortPairGroup;
 import org.onosproject.vtnrsc.Router;
 import org.onosproject.vtnrsc.RouterInterface;
+import org.onosproject.vtnrsc.PortPair;
+import org.onosproject.vtnrsc.PortPairGroup;
+import org.onosproject.vtnrsc.FlowClassifier;
+import org.onosproject.vtnrsc.PortChain;
 import org.onosproject.vtnrsc.VirtualPort;
+
+import static com.google.common.base.MoreObjects.toStringHelper;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Representation of a VtnRsc event feedback.

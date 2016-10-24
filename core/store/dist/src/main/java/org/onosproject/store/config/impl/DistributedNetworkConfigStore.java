@@ -132,8 +132,12 @@ public class DistributedNetworkConfigStore
         ImmutableSet.copyOf(configs.keySet()).forEach(k -> {
             if (Objects.equals(k.configKey, configFactory.configKey()) &&
                     isAssignableFrom(configFactory, k)) {
-                validateConfig(k, configFactory, configs.get(k).value());
-                configs.remove(k); // Prune whether valid or not
+                // Prune whether valid or not
+                Versioned<JsonNode> versioned = configs.remove(k);
+                // Allow for the value to be processed by another node already
+                if (versioned != null) {
+                    validateConfig(k, configFactory, versioned.value());
+                }
             }
         });
     }
@@ -164,8 +168,23 @@ public class DistributedNetworkConfigStore
     @Override
     public void removeConfigFactory(ConfigFactory configFactory) {
         factoriesByConfig.remove(configFactory.configClass().getName());
+        processExistingConfigs(configFactory);
         notifyDelegate(new NetworkConfigEvent(CONFIG_UNREGISTERED, configFactory.configKey(),
                                               configFactory.configClass()));
+    }
+
+    // Sweep through any configurations for the config factory, set back to pending state.
+    private void processExistingConfigs(ConfigFactory configFactory) {
+        ImmutableSet.copyOf(configs.keySet()).forEach(k -> {
+            if (Objects.equals(configFactory.configClass().getName(), k.configClass)) {
+                Versioned<JsonNode> remove = configs.remove(k);
+                if (remove != null) {
+                    JsonNode json = remove.value();
+                    configs.put(key(k.subject, configFactory.configKey()), json);
+                    log.debug("Set config pending: {}, {}", k.subject, k.configClass);
+                }
+            }
+        });
     }
 
     @Override
@@ -205,7 +224,13 @@ public class DistributedNetworkConfigStore
         ImmutableSet.Builder<Class<? extends Config<S>>> builder = ImmutableSet.builder();
         configs.keySet().forEach(k -> {
             if (Objects.equals(subject, k.subject) && k.configClass != null && delegate != null) {
-                builder.add(factoriesByConfig.get(k.configClass).configClass());
+                ConfigFactory<S, ? extends Config<S>> configFactory = factoriesByConfig.get(k.configClass);
+                if (configFactory == null) {
+                    log.warn("Found config but no config factory: subject={}, configClass={}",
+                             subject, k.configClass);
+                } else {
+                    builder.add(configFactory.configClass());
+                }
             }
         });
         return builder.build();

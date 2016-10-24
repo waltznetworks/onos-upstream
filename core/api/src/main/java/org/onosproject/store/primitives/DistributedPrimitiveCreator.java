@@ -20,10 +20,12 @@ import java.util.Set;
 import org.onosproject.store.service.AsyncAtomicCounter;
 import org.onosproject.store.service.AsyncAtomicValue;
 import org.onosproject.store.service.AsyncConsistentMap;
+import org.onosproject.store.service.AsyncConsistentTreeMap;
 import org.onosproject.store.service.AsyncDistributedSet;
+import org.onosproject.store.service.AsyncDocumentTree;
 import org.onosproject.store.service.AsyncLeaderElector;
-import org.onosproject.store.service.DistributedQueue;
 import org.onosproject.store.service.Serializer;
+import org.onosproject.store.service.WorkQueue;
 
 /**
  * Interface for entity that can create instances of different distributed primitives.
@@ -40,6 +42,16 @@ public interface DistributedPrimitiveCreator {
      * @return map
      */
     <K, V> AsyncConsistentMap<K, V> newAsyncConsistentMap(String name, Serializer serializer);
+
+    /**
+     * Creates a new {@code AsyncConsistentTreeMap}.
+     *
+     * @param name tree name
+     * @param serializer serializer to use for serializing/deserializing map entries
+     * @param <V> value type
+     * @return distributedTreeMap
+     */
+    <V> AsyncConsistentTreeMap<V> newAsyncConsistentTreeMap(String name, Serializer serializer);
 
     /**
      * Creates a new {@code AsyncAtomicCounter}.
@@ -60,16 +72,6 @@ public interface DistributedPrimitiveCreator {
     <V> AsyncAtomicValue<V> newAsyncAtomicValue(String name, Serializer serializer);
 
     /**
-     * Creates a new {@code DistributedQueue}.
-     *
-     * @param name queue name
-     * @param serializer serializer to use for serializing/deserializing queue entries
-     * @param <E> queue entry type
-     * @return queue
-     */
-    <E> DistributedQueue<E> newDistributedQueue(String name, Serializer serializer);
-
-    /**
      * Creates a new {@code AsyncDistributedSet}.
      *
      * @param name set name
@@ -88,6 +90,26 @@ public interface DistributedPrimitiveCreator {
     AsyncLeaderElector newAsyncLeaderElector(String name);
 
     /**
+     * Creates a new {@code WorkQueue}.
+     *
+     * @param <E> work element type
+     * @param name work queue name
+     * @param serializer serializer
+     * @return work queue
+     */
+    <E> WorkQueue<E> newWorkQueue(String name, Serializer serializer);
+
+    /**
+     * Creates a new {@code AsyncDocumentTree}.
+     *
+     * @param <V> document tree node value type
+     * @param name tree name
+     * @param serializer serializer
+     * @return document tree
+     */
+    <V> AsyncDocumentTree<V> newAsyncDocumentTree(String name, Serializer serializer);
+
+    /**
      * Returns the names of all created {@code AsyncConsistentMap} instances.
      * @return set of {@code AsyncConsistentMap} names
      */
@@ -98,4 +120,10 @@ public interface DistributedPrimitiveCreator {
      * @return set of {@code AsyncAtomicCounter} names
      */
     Set<String> getAsyncAtomicCounterNames();
+
+    /**
+     * Returns the names of all created {@code WorkQueue} instances.
+     * @return set of {@code WorkQueue} names
+     */
+    Set<String> getWorkQueueNames();
 }

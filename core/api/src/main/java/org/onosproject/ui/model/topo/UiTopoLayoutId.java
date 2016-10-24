@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Open Networking Laboratory
+ * Copyright 2016-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,14 @@ import org.onlab.util.Identifier;
  */
 public final class UiTopoLayoutId extends Identifier<String> {
 
+    private static final String DEFAULT_STR = "_default_";
+
+    /**
+     * Default topology layout identifier.
+     */
+    public static final UiTopoLayoutId DEFAULT_ID =
+            UiTopoLayoutId.layoutId(DEFAULT_STR);
+
     // For serialization
     private UiTopoLayoutId() {
     }
@@ -39,5 +47,14 @@ public final class UiTopoLayoutId extends Identifier<String> {
      */
     public static UiTopoLayoutId layoutId(String value) {
         return new UiTopoLayoutId(value);
+    }
+
+    /**
+     * Returns true if this is the identifier for the default layout.
+     *
+     * @return true if this is the default layout identifier
+     */
+    public boolean isDefault() {
+        return DEFAULT_STR.equals(identifier);
     }
 }

@@ -15,20 +15,31 @@
  */
 package org.onosproject.store.primitives.resources.impl;
 
-import static org.junit.Assert.*;
-
-import org.junit.Ignore;
-import org.junit.Test;
-
 import io.atomix.Atomix;
 import io.atomix.resource.ResourceType;
 import io.atomix.variables.DistributedLong;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
-/**
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+/**git s
  * Unit tests for {@link AtomixCounter}.
  */
-@Ignore
 public class AtomixLongTest extends AtomixTestBase {
+
+    @BeforeClass
+    public static void preTestSetup() throws Throwable {
+        createCopycatServers(3);
+    }
+
+    @AfterClass
+    public static void postTestCleanup() throws Exception {
+        clearTests();
+    }
 
     @Override
     protected ResourceType resourceType() {
@@ -37,13 +48,13 @@ public class AtomixLongTest extends AtomixTestBase {
 
     @Test
     public void testBasicOperations() throws Throwable {
-        basicOperationsTest(3);
+        basicOperationsTest();
     }
 
-    protected void basicOperationsTest(int clusterSize) throws Throwable {
-        createCopycatServers(clusterSize);
+    protected void basicOperationsTest() throws Throwable {
         Atomix atomix = createAtomixClient();
-        AtomixCounter along = new AtomixCounter("test-long", atomix.getLong("test-long").join());
+        AtomixCounter along = new AtomixCounter("test-long-basic-operations",
+                                                atomix.getLong("test-long").join());
         assertEquals(0, along.get().join().longValue());
         assertEquals(1, along.incrementAndGet().join().longValue());
         along.set(100).join();

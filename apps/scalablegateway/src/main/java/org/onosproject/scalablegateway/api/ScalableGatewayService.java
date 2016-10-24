@@ -35,20 +35,21 @@ public interface ScalableGatewayService {
     GatewayNode getGatewayNode(DeviceId deviceId);
 
     /**
-     * Returns the list of gateway`s port numbers with the given device identifier.
+     * Returns the uplink port number of the gateway with the supplied device ID.
      *
-     * @param deviceId The gateway node deviceId
-     * @return The list of external interface port number
+     * @param deviceId the gateway node device id
+     * @return the external interface port number
      */
-    List<PortNumber> getGatewayExternalPorts(DeviceId deviceId);
+    PortNumber getUplinkPort(DeviceId deviceId);
 
     /**
      * Returns group id for gateway load balance.
+     * If the group does not exist in the supplied source device, creates one.
      *
      * @param srcDeviceId source device id
      * @return The group id
      */
-    GroupId getGroupIdForGatewayLoadBalance(DeviceId srcDeviceId);
+    GroupId getGatewayGroupId(DeviceId srcDeviceId);
 
     /**
      * Returns the list of gateway node information with the given device identifier.

@@ -21,7 +21,7 @@
     <parent>
         <groupId>org.onosproject</groupId>
         <artifactId>onos-pcep-providers</artifactId>
-        <version>1.6.0</version>
+        <version>1.7.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>onos-pcep</artifactId>
@@ -36,12 +36,10 @@
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-pcepio</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-pcep-controller-api</artifactId>
-            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.onosproject</groupId>
@@ -56,11 +54,6 @@
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-pcep-provider-tunnel</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.onosproject</groupId>
-            <artifactId>onos-pcep-provider-packet</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

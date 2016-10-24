@@ -41,6 +41,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Handles REST API call of Neturon L3 plugin.
  */
+
 @Path("routers")
 public class OpensatckRouterWebResource extends AbstractWebResource {
     private final Logger log = LoggerFactory.getLogger(getClass());
@@ -125,7 +126,7 @@ public class OpensatckRouterWebResource extends AbstractWebResource {
 
             OpenstackRoutingService routingService
                     = getService(OpenstackRoutingService.class);
-            routingService.updateRouterInterface(openstackRouterInterface);
+            routingService.addRouterInterface(openstackRouterInterface);
 
             log.debug("REST API AddRouterInterface is called from router {} portId: {}, subnetId: {}, tenantId: {}",
                     openstackRouterInterface.id(), openstackRouterInterface.portId(),
@@ -142,11 +143,12 @@ public class OpensatckRouterWebResource extends AbstractWebResource {
 
     @DELETE
     @Path("{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
     public Response deleteRouter(@PathParam("id") String id) {
         checkNotNull(id);
         OpenstackRoutingService routingService
                 = getService(OpenstackRoutingService.class);
-        routingService.deleteRouter(id);
+        routingService.removeRouter(id);
 
         log.debug("REST API DELETE routers is called {}", id);
         return Response.noContent().build();

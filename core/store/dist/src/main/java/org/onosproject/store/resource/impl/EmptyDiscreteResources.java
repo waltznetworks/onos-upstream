@@ -15,11 +15,11 @@
  */
 package org.onosproject.store.resource.impl;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableSet;
 import org.onosproject.net.resource.DiscreteResource;
 import org.onosproject.net.resource.DiscreteResourceId;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -27,7 +27,7 @@ import java.util.Set;
  * Represents an empty set of discrete resource.
  */
 final class EmptyDiscreteResources implements DiscreteResources {
-    static final DiscreteResources INSTANCE = new EmptyDiscreteResources();
+    static final EmptyDiscreteResources INSTANCE = new EmptyDiscreteResources();
 
     // for serializer
     private EmptyDiscreteResources() {}
@@ -48,7 +48,7 @@ final class EmptyDiscreteResources implements DiscreteResources {
     }
 
     @Override
-    public boolean containsAny(List<DiscreteResource> other) {
+    public boolean containsAny(Set<DiscreteResource> other) {
         return false;
     }
 
@@ -58,12 +58,19 @@ final class EmptyDiscreteResources implements DiscreteResources {
     }
 
     @Override
-    public DiscreteResources remove(List<DiscreteResource> removed) {
-        return this;
+    public Set<DiscreteResource> values() {
+        return ImmutableSet.of();
     }
 
     @Override
-    public Set<DiscreteResource> values() {
+    public String toString() {
+        return MoreObjects.toStringHelper(this)
+                .add("values", ImmutableSet.of())
+                .toString();
+    }
+
+    @Override
+    public <T> Set<DiscreteResource> valuesOf(Class<T> cls) {
         return ImmutableSet.of();
     }
 }

@@ -33,7 +33,7 @@ public interface OspfInterface {
     public int interfaceIndex();
 
     /**
-     * Set interface index.
+     * Sets interface index.
      *
      * @param interfaceIndex interface index
      */

@@ -17,15 +17,16 @@ package org.onosproject.store.resource.impl;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.Sets;
+
 import org.onosproject.net.resource.DiscreteResource;
 import org.onosproject.net.resource.DiscreteResourceId;
 import org.onosproject.net.resource.Resources;
 
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 final class GenericDiscreteResources implements DiscreteResources {
     private final Set<DiscreteResource> values;
@@ -59,7 +60,14 @@ final class GenericDiscreteResources implements DiscreteResources {
 
     @Override
     public DiscreteResources difference(DiscreteResources other) {
-        return new GenericDiscreteResources(Sets.difference(this.values, other.values()));
+        if (other instanceof GenericDiscreteResources) {
+            // make sure that the set is serializable
+            return of(new LinkedHashSet<>(Sets.difference(this.values(), other.values())));
+        } else if (other instanceof EmptyDiscreteResources) {
+            return this;
+        }
+
+        return DiscreteResources.of(Sets.difference(this.values(), other.values()));
     }
 
     @Override
@@ -68,24 +76,21 @@ final class GenericDiscreteResources implements DiscreteResources {
     }
 
     @Override
-    public boolean containsAny(List<DiscreteResource> other) {
-        return other.stream().anyMatch(values::contains);
+    public boolean containsAny(Set<DiscreteResource> other) {
+        return !Sets.intersection(this.values(), other).isEmpty();
     }
 
     // returns a new instance, not mutate the current instance
     @Override
     public DiscreteResources add(DiscreteResources other) {
-        Set<DiscreteResource> newValues = new LinkedHashSet<>(this.values);
-        newValues.addAll(other.values());
-        return new GenericDiscreteResources(newValues);
-    }
+        if (other instanceof GenericDiscreteResources) {
+            // make sure that the set is serializable
+            return of(new LinkedHashSet<>(Sets.union(this.values(), other.values())));
+        } else if (other instanceof EmptyDiscreteResources) {
+            return this;
+        }
 
-    // returns a new instance, not mutate the current instance
-    @Override
-    public DiscreteResources remove(List<DiscreteResource> removed) {
-        Set<DiscreteResource> newValues = new LinkedHashSet<>(this.values);
-        newValues.removeAll(removed);
-        return new GenericDiscreteResources(newValues);
+        return DiscreteResources.of(Sets.union(this.values(), other.values()));
     }
 
     @Override
@@ -93,6 +98,13 @@ final class GenericDiscreteResources implements DiscreteResources {
         // breaks immutability, but intentionally returns the field
         // because this class is transient
         return values;
+    }
+
+    @Override
+    public <T> Set<DiscreteResource> valuesOf(Class<T> cls) {
+        return values.stream()
+                .filter(x -> x.isTypeOf(cls))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     @Override

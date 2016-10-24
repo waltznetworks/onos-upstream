@@ -28,7 +28,6 @@ import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
 import org.onlab.util.KryoNamespace;
-import org.onlab.util.NewConcurrentHashMap;
 import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
@@ -63,6 +62,7 @@ import org.onosproject.store.service.MapEventListener;
 import org.onosproject.store.service.MultiValuedTimestamp;
 import org.onosproject.store.service.Serializer;
 import org.onosproject.store.service.StorageService;
+import org.onosproject.store.service.Topic;
 import org.onosproject.store.service.Versioned;
 import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
@@ -89,7 +89,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
-import static org.apache.commons.lang3.concurrent.ConcurrentUtils.createIfAbsentUnchecked;
 import static org.onlab.util.Tools.get;
 import static org.onlab.util.Tools.groupedThreads;
 import static org.slf4j.LoggerFactory.getLogger;
@@ -135,16 +134,19 @@ public class DistributedGroupStore
             groupEntriesById = new ConcurrentHashMap<>();
     private ConsistentMap<GroupStoreKeyMapKey,
             StoredGroupEntry> auditPendingReqQueue = null;
+    private MapEventListener<GroupStoreKeyMapKey, StoredGroupEntry>
+            mapListener = new GroupStoreKeyMapListener();
     private final ConcurrentMap<DeviceId, ConcurrentMap<GroupId, Group>>
             extraneousGroupEntriesById = new ConcurrentHashMap<>();
     private ExecutorService messageHandlingExecutor;
     private static final int MESSAGE_HANDLER_THREAD_POOL_SIZE = 1;
-
     private final HashMap<DeviceId, Boolean> deviceAuditStatus = new HashMap<>();
 
     private final AtomicInteger groupIdGen = new AtomicInteger();
 
     private KryoNamespace clusterMsgSerializer;
+
+    private static Topic<GroupStoreMessage> groupTopic;
 
     @Property(name = "garbageCollect", boolValue = GARBAGE_COLLECT,
             label = "Enable group garbage collection")
@@ -198,7 +200,7 @@ public class DistributedGroupStore
                 .withName("onos-group-store-keymap")
                 .withSerializer(serializer)
                 .build();
-        groupStoreEntriesByKey.addListener(new GroupStoreKeyMapListener());
+        groupStoreEntriesByKey.addListener(mapListener);
         log.debug("Current size of groupstorekeymap:{}",
                   groupStoreEntriesByKey.size());
         synchronizeGroupStoreEntries();
@@ -212,11 +214,15 @@ public class DistributedGroupStore
         log.debug("Current size of pendinggroupkeymap:{}",
                   auditPendingReqQueue.size());
 
+        groupTopic = getOrCreateGroupTopic(serializer);
+        groupTopic.subscribe(this::processGroupMessage);
+
         log.info("Started");
     }
 
     @Deactivate
     public void deactivate() {
+        groupStoreEntriesByKey.removeListener(mapListener);
         cfgService.unregisterProperties(getClass(), false);
         clusterCommunicator.removeSubscriber(GroupStoreMessageSubjects.REMOTE_GROUP_OP_REQUEST);
         log.info("Stopped");
@@ -238,15 +244,13 @@ public class DistributedGroupStore
         }
     }
 
-    private static NewConcurrentHashMap<GroupId, Group>
-    lazyEmptyExtraneousGroupIdTable() {
-        return NewConcurrentHashMap.<GroupId, Group>ifNeeded();
-    }
-
-    private static NewConcurrentHashMap<GroupId, StoredGroupEntry>
-    lazyEmptyGroupIdTable() {
-        return NewConcurrentHashMap.<GroupId, StoredGroupEntry>ifNeeded();
-    }
+    private Topic<GroupStoreMessage> getOrCreateGroupTopic(Serializer serializer) {
+        if (groupTopic == null) {
+            return storageService.getTopic("group-failover-notif", serializer);
+        } else {
+            return groupTopic;
+        }
+    };
 
 
     private void synchronizeGroupStoreEntries() {
@@ -277,8 +281,7 @@ public class DistributedGroupStore
      * @return Map representing group key table of given device.
      */
     private ConcurrentMap<GroupId, StoredGroupEntry> getGroupIdTable(DeviceId deviceId) {
-        return createIfAbsentUnchecked(groupEntriesById,
-                                       deviceId, lazyEmptyGroupIdTable());
+        return groupEntriesById.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>());
     }
 
     /**
@@ -299,9 +302,7 @@ public class DistributedGroupStore
      */
     private ConcurrentMap<GroupId, Group>
     getExtraneousGroupIdTable(DeviceId deviceId) {
-        return createIfAbsentUnchecked(extraneousGroupEntriesById,
-                                       deviceId,
-                                       lazyEmptyExtraneousGroupIdTable());
+        return extraneousGroupEntriesById.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>());
     }
 
     /**
@@ -1162,6 +1163,16 @@ public class DistributedGroupStore
         }
     }
 
+    private void processGroupMessage(GroupStoreMessage message) {
+        if (message.type() == GroupStoreMessage.Type.FAILOVER) {
+            // FIXME: groupStoreEntriesByKey inaccessible here
+            getGroupIdTable(message.deviceId()).values()
+                    .stream()
+                    .filter((storedGroup) -> (storedGroup.appCookie().equals(message.appCookie())))
+                    .findFirst().ifPresent(group -> notifyDelegate(new GroupEvent(Type.GROUP_BUCKET_FAILOVER, group)));
+        }
+    }
+
     private void process(GroupStoreMessage groupOp) {
         log.debug("Received remote group operation {} request for device {}",
                   groupOp.type(),
@@ -1296,21 +1307,20 @@ public class DistributedGroupStore
         Set<Group> extraneousStoredEntries =
                 Sets.newHashSet(getExtraneousGroups(deviceId));
 
-        log.trace("pushGroupMetrics: Displaying all ({}) southboundGroupEntries for device {}",
-                  southboundGroupEntries.size(),
-                  deviceId);
-        for (Iterator<Group> it = southboundGroupEntries.iterator(); it.hasNext();) {
-            Group group = it.next();
-            log.trace("Group {} in device {}", group, deviceId);
-        }
+        if (log.isTraceEnabled()) {
+            log.trace("pushGroupMetrics: Displaying all ({}) southboundGroupEntries for device {}",
+                    southboundGroupEntries.size(),
+                    deviceId);
+            for (Group group : southboundGroupEntries) {
+                log.trace("Group {} in device {}", group, deviceId);
+            }
 
-        log.trace("Displaying all ({}) stored group entries for device {}",
-                  storedGroupEntries.size(),
-                  deviceId);
-        for (Iterator<StoredGroupEntry> it1 = storedGroupEntries.iterator();
-             it1.hasNext();) {
-            Group group = it1.next();
-            log.trace("Stored Group {} for device {}", group, deviceId);
+            log.trace("Displaying all ({}) stored group entries for device {}",
+                    storedGroupEntries.size(),
+                    deviceId);
+            for (StoredGroupEntry group : storedGroupEntries) {
+                log.trace("Stored Group {} for device {}", group, deviceId);
+            }
         }
 
         garbageCollect(deviceId, southboundGroupEntries, storedGroupEntries);
@@ -1364,6 +1374,16 @@ public class DistributedGroupStore
                      deviceId);
             deviceInitialAuditCompleted(deviceId, true);
         }
+    }
+
+    @Override
+    public void notifyOfFailovers(Collection<Group> failoverGroups) {
+        failoverGroups.forEach(group -> {
+            if (group.type() == Group.Type.FAILOVER) {
+                groupTopic.publish(GroupStoreMessage.createGroupFailoverMsg(
+                        group.deviceId(), group));
+            }
+        });
     }
 
     private void garbageCollect(DeviceId deviceId,

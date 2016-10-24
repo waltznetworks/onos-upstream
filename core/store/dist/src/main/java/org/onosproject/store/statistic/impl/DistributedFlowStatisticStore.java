@@ -27,6 +27,7 @@ import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
 import org.onlab.util.Tools;
+import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.mastership.MastershipService;
@@ -59,6 +60,7 @@ import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Strings.isNullOrEmpty;
+import static java.util.concurrent.Executors.newFixedThreadPool;
 import static org.onlab.util.Tools.get;
 import static org.onlab.util.Tools.groupedThreads;
 import static org.slf4j.LoggerFactory.getLogger;
@@ -83,6 +85,9 @@ public class DistributedFlowStatisticStore implements FlowStatisticStore {
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected ClusterService clusterService;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected ComponentConfigService cfgService;
+
     private Map<ConnectPoint, Set<FlowEntry>> previous =
             new ConcurrentHashMap<>();
 
@@ -106,7 +111,11 @@ public class DistributedFlowStatisticStore implements FlowStatisticStore {
     private static final long STATISTIC_STORE_TIMEOUT_MILLIS = 3000;
 
     @Activate
-    public void activate() {
+    public void activate(ComponentContext context) {
+        cfgService.registerProperties(getClass());
+
+        modified(context);
+
         local = clusterService.getLocalNode().id();
 
         messageHandlingExecutor = Executors.newFixedThreadPool(
@@ -126,6 +135,7 @@ public class DistributedFlowStatisticStore implements FlowStatisticStore {
 
     @Deactivate
     public void deactivate() {
+        cfgService.unregisterProperties(getClass(), false);
         clusterCommunicator.removeSubscriber(GET_PREVIOUS);
         clusterCommunicator.removeSubscriber(GET_CURRENT);
         messageHandlingExecutor.shutdown();
@@ -338,7 +348,8 @@ public class DistributedFlowStatisticStore implements FlowStatisticStore {
      */
     private void restartMessageHandlerThreadPool() {
         ExecutorService prevExecutor = messageHandlingExecutor;
-        messageHandlingExecutor = Executors.newFixedThreadPool(getMessageHandlerThreadPoolSize());
+        messageHandlingExecutor = newFixedThreadPool(getMessageHandlerThreadPoolSize(),
+                                                     groupedThreads("DistFlowStats", "messageHandling-%d", log));
         prevExecutor.shutdown();
     }
 

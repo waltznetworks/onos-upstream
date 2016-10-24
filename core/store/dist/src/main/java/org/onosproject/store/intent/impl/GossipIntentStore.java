@@ -16,7 +16,6 @@
 package org.onosproject.store.intent.impl;
 
 import com.google.common.collect.ImmutableList;
-
 import org.apache.commons.lang.math.RandomUtils;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
@@ -28,22 +27,24 @@ import org.onlab.util.KryoNamespace;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.ControllerNode;
 import org.onosproject.cluster.NodeId;
+import org.onosproject.incubator.net.virtual.NetworkId;
+import org.onosproject.incubator.net.virtual.VirtualNetworkIntent;
 import org.onosproject.net.intent.Intent;
 import org.onosproject.net.intent.IntentData;
 import org.onosproject.net.intent.IntentEvent;
+import org.onosproject.net.intent.WorkPartitionService;
 import org.onosproject.net.intent.IntentState;
 import org.onosproject.net.intent.IntentStore;
 import org.onosproject.net.intent.IntentStoreDelegate;
 import org.onosproject.net.intent.Key;
-import org.onosproject.net.intent.IntentPartitionService;
 import org.onosproject.store.AbstractStore;
-import org.onosproject.store.service.MultiValuedTimestamp;
-import org.onosproject.store.service.WallClockTimestamp;
 import org.onosproject.store.serializers.KryoNamespaces;
 import org.onosproject.store.service.EventuallyConsistentMap;
 import org.onosproject.store.service.EventuallyConsistentMapEvent;
 import org.onosproject.store.service.EventuallyConsistentMapListener;
+import org.onosproject.store.service.MultiValuedTimestamp;
 import org.onosproject.store.service.StorageService;
+import org.onosproject.store.service.WallClockTimestamp;
 import org.slf4j.Logger;
 
 import java.util.Collection;
@@ -62,7 +63,7 @@ import static org.slf4j.LoggerFactory.getLogger;
  */
 //FIXME we should listen for leadership changes. if the local instance has just
 // ...  become a leader, scan the pending map and process those
-@Component(immediate = true, enabled = true)
+@Component(immediate = true)
 @Service
 public class GossipIntentStore
         extends AbstractStore<IntentEvent, IntentStoreDelegate>
@@ -83,43 +84,53 @@ public class GossipIntentStore
     protected StorageService storageService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
-    protected IntentPartitionService partitionService;
+    protected WorkPartitionService partitionService;
 
     private final AtomicLong sequenceNumber = new AtomicLong(0);
+
+    private EventuallyConsistentMapListener<Key, IntentData>
+            mapCurrentListener = new InternalCurrentListener();
+
+    private EventuallyConsistentMapListener<Key, IntentData>
+            mapPendingListener = new InternalPendingListener();
 
     @Activate
     public void activate() {
         KryoNamespace.Builder intentSerializer = KryoNamespace.newBuilder()
                 .register(KryoNamespaces.API)
-                .nextId(KryoNamespaces.BEGIN_USER_CUSTOM_ID)
                 .register(IntentData.class)
+                .register(VirtualNetworkIntent.class)
+                .register(NetworkId.class)
                 .register(MultiValuedTimestamp.class);
 
         currentMap = storageService.<Key, IntentData>eventuallyConsistentMapBuilder()
                 .withName("intent-current")
                 .withSerializer(intentSerializer)
                 .withTimestampProvider((key, intentData) ->
-                                            new MultiValuedTimestamp<>(intentData.version(),
-                                                                       sequenceNumber.getAndIncrement()))
+                                               new MultiValuedTimestamp<>(intentData.version(),
+                                                                          sequenceNumber.getAndIncrement()))
                 .withPeerUpdateFunction((key, intentData) -> getPeerNodes(key, intentData))
                 .build();
 
         pendingMap = storageService.<Key, IntentData>eventuallyConsistentMapBuilder()
                 .withName("intent-pending")
                 .withSerializer(intentSerializer)
-                .withTimestampProvider((key, intentData) -> new MultiValuedTimestamp<>(intentData.version(),
-                                                                                       System.nanoTime()))
+                .withTimestampProvider((key, intentData) -> intentData == null ?
+                        new MultiValuedTimestamp<>(new WallClockTimestamp(), System.nanoTime()) :
+                        new MultiValuedTimestamp<>(intentData.version(), System.nanoTime()))
                 .withPeerUpdateFunction((key, intentData) -> getPeerNodes(key, intentData))
                 .build();
 
-        currentMap.addListener(new InternalCurrentListener());
-        pendingMap.addListener(new InternalPendingListener());
+        currentMap.addListener(mapCurrentListener);
+        pendingMap.addListener(mapPendingListener);
 
         log.info("Started");
     }
 
     @Deactivate
     public void deactivate() {
+        currentMap.removeListener(mapCurrentListener);
+        pendingMap.removeListener(mapPendingListener);
         currentMap.destroy();
         pendingMap.destroy();
 
@@ -187,13 +198,20 @@ public class GossipIntentStore
                 currentMap.put(newData.key(), new IntentData(newData));
             }
 
-            // if current.put succeeded
-            pendingMap.remove(newData.key(), newData);
+            // Remove the intent data from the pending map if the newData is more
+            // recent or equal to the existing entry.
+            pendingMap.compute(newData.key(), (key, existingValue) -> {
+                if (existingValue == null || !existingValue.version().isNewerThan(newData.version())) {
+                    return null;
+                } else {
+                    return existingValue;
+                }
+            });
         }
     }
 
     private Collection<NodeId> getPeerNodes(Key key, IntentData data) {
-        NodeId master = partitionService.getLeader(key);
+        NodeId master = partitionService.getLeader(key, Key::hash);
         NodeId origin = (data != null) ? data.origin() : null;
         if (data != null && (master == null || origin == null)) {
             log.debug("Intent {} missing master and/or origin; master = {}, origin = {}",
@@ -256,16 +274,16 @@ public class GossipIntentStore
 
         if (data.version() == null) {
             pendingMap.put(data.key(), new IntentData(data.intent(), data.state(),
-                    new WallClockTimestamp(), clusterService.getLocalNode().id()));
+                                                      new WallClockTimestamp(), clusterService.getLocalNode().id()));
         } else {
             pendingMap.put(data.key(), new IntentData(data.intent(), data.state(),
-                    data.version(), clusterService.getLocalNode().id()));
+                                                      data.version(), clusterService.getLocalNode().id()));
         }
     }
 
     @Override
     public boolean isMaster(Key intentKey) {
-        return partitionService.isMine(intentKey);
+        return partitionService.isMine(intentKey, Key::hash);
     }
 
     @Override
@@ -286,7 +304,7 @@ public class GossipIntentStore
         final WallClockTimestamp time = new WallClockTimestamp(now - olderThan);
         return pendingMap.values().stream()
                 .filter(data -> data.version().isOlderThan(time) &&
-                                (!localOnly || isMaster(data.key())))
+                        (!localOnly || isMaster(data.key())))
                 .collect(Collectors.toList());
     }
 

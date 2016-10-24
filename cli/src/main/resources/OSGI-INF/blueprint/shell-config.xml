@@ -190,13 +190,13 @@
             </completers>
         </command>
         <command>
-            <action class="org.onosproject.cli.net.AddMeter"/>
+            <action class="org.onosproject.cli.net.AddMeterCommand"/>
             <completers>
                 <ref component-id="deviceIdCompleter"/>
             </completers>
         </command>
         <command>
-            <action class="org.onosproject.cli.net.Meters"/>
+            <action class="org.onosproject.cli.net.MetersListCommand"/>
             <completers>
                 <ref component-id="deviceIdCompleter"/>
             </completers>
@@ -229,6 +229,7 @@
             <action class="org.onosproject.cli.net.EdgePortsListCommand"/>
             <completers>
                 <ref component-id="deviceIdCompleter"/>
+                <null/>
             </completers>
         </command>
 
@@ -280,6 +281,7 @@
             <completers>
                 <ref component-id="connectPointCompleter"/>
                 <ref component-id="connectPointCompleter"/>
+                <null/> <!-- no more argument -->
             </completers>
             <optional-completers>
                 <entry key="-t" value-ref="ethTypeCompleter"/>
@@ -289,26 +291,17 @@
                 <entry key="--extHdr" value-ref="ExtHeaderCompleter"/>
                 <entry key="-a" value-ref="allAppNameCompleter"/>
                 <entry key="-e" value-ref="encapTypeCompleter"/>
+                <entry key="-r" value-ref="nullCompleter"/> <!-- option has no argument -->
             </optional-completers>
         </command>
         <command>
-            <action class="org.onosproject.cli.net.AddOpticalIntentCommand"/>
-            <completers>
-                <ref component-id="connectPointCompleter"/>
-                <ref component-id="connectPointCompleter"/>
-            </completers>
-            <optional-completers>
-                <entry key="-a" value-ref="allAppNameCompleter"/>
-            </optional-completers>
-        </command>
-        <command>
-            <action class="org.onosproject.cli.net.GetStatistics"/>
+            <action class="org.onosproject.cli.net.GetStatisticsCommand"/>
             <completers>
                 <ref component-id="connectPointCompleter"/>
             </completers>
         </command>
         <command>
-            <action class="org.onosproject.cli.net.GetFlowStatistics"/>
+            <action class="org.onosproject.cli.net.GetFlowStatisticsCommand"/>
             <completers>
                 <ref component-id="deviceIdCompleter"/>
             </completers>
@@ -400,7 +393,13 @@
             <action class="org.onosproject.cli.net.CountersListCommand"/>
         </command>
         <command>
+            <action class="org.onosproject.cli.net.QueuesListCommand"/>
+        </command>
+        <command>
             <action class="org.onosproject.cli.net.TransactionsCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.CounterCommand"/>
         </command>
         <command>
             <action class="org.onosproject.cli.net.ClusterDevicesCommand"/>
@@ -460,6 +459,13 @@
         </command>
 
         <command>
+            <action class="org.onosproject.cli.net.PortQueryVlansCommand"/>
+            <completers>
+                <ref component-id="connectPointCompleter"/>
+            </completers>
+        </command>
+
+        <command>
             <action class="org.onosproject.cli.net.TableStatisticsCommand"/>
         </command>
 
@@ -478,6 +484,9 @@
         </command>
         <command>
             <action class="org.onosproject.cli.net.PacketProcessorsListCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.NeighbourHandlersListCommand"/>
         </command>
 
         <command>
@@ -628,6 +637,19 @@
             </completers>
         </command>
 
+        <!-- UI Layout commands -->
+        <command>
+            <action class="org.onosproject.cli.net.LayoutListCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.LayoutAddCommand"/>
+        </command>
+        <!--TODO: add this + completers
+        <command>
+            <action class="org.onosproject.cli.net.LayoutRemoveCommand"/>
+        </command>
+        -->
+
         <!--virtual network commands -->
         <command>
             <action class="org.onosproject.cli.net.vnet.TenantListCommand"/>
@@ -673,6 +695,24 @@
         </command>
         <command>
             <action class="org.onosproject.cli.net.vnet.VirtualPortRemoveCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.vnet.VirtualHostListCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.vnet.VirtualHostCreateCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.vnet.VirtualHostRemoveCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.vnet.VirtualNetworkIntentCreateCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.vnet.VirtualNetworkIntentRemoveCommand"/>
+        </command>
+        <command>
+            <action class="org.onosproject.cli.net.DpisListCommand"/>
         </command>
     </command-bundle>
 

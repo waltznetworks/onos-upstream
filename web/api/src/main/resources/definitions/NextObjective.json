@@ -3,10 +3,10 @@
   "title": "nextObjective",
   "required": [
     "type",
+    "id",
     "priority",
     "timeout",
     "isPermanent",
-    "deviceId",
     "operation",
     "meta",
     "treatments"
@@ -15,6 +15,11 @@
     "type": {
       "type": "string",
       "example": "HASHED"
+    },
+    "id": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1
     },
     "priority": {
       "type": "integer",
@@ -29,10 +34,6 @@
     "isPermanent": {
       "type": "boolean",
       "example": true
-    },
-    "deviceId": {
-      "type": "string",
-      "example": "of:0000000000000001"
     },
     "operation": {
       "type": "string",

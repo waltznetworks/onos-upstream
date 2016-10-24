@@ -32,7 +32,6 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
@@ -51,11 +50,12 @@ import org.onosproject.ui.UiExtension;
 import org.onosproject.ui.UiExtensionService;
 import org.onosproject.ui.UiMessageHandlerFactory;
 import org.onosproject.ui.UiPreferencesService;
-import org.onosproject.ui.UiTopoOverlayFactory;
+import org.onosproject.ui.UiTopoMap;
 import org.onosproject.ui.UiTopoMapFactory;
+import org.onosproject.ui.UiTopoOverlayFactory;
 import org.onosproject.ui.UiView;
 import org.onosproject.ui.UiViewHidden;
-import org.onosproject.ui.UiTopoMap;
+import org.onosproject.ui.impl.topo.Topo2ViewMessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -120,7 +120,8 @@ public class UiExtensionManager
     private final ObjectMapper mapper = new ObjectMapper();
 
     private final ExecutorService eventHandlingExecutor =
-            Executors.newSingleThreadExecutor(Tools.groupedThreads("onos/ui-ext-manager", "event-handler", log));
+            Executors.newSingleThreadExecutor(
+                    Tools.groupedThreads("onos/ui-ext-manager", "event-handler", log));
 
     // Creates core UI extension
     private UiExtension createCoreExtension() {
@@ -130,6 +131,11 @@ public class UiExtensionManager
                 new UiView(PLATFORM, "cluster", "Cluster Nodes", "nav_cluster"),
                 new UiView(PLATFORM, "processor", "Packet Processors", "nav_processors"),
                 new UiView(NETWORK, "topo", "Topology", "nav_topo"),
+
+                // FIXME: leave commented out for now, while still under development
+//                new UiView(NETWORK, "topo2", "New-Topo"),
+//                new UiView(NETWORK, "topoX", "Topo-X"),
+
                 new UiView(NETWORK, "device", "Devices", "nav_devs"),
                 new UiViewHidden("flow"),
                 new UiViewHidden("port"),
@@ -145,6 +151,7 @@ public class UiExtensionManager
                 () -> ImmutableList.of(
                         new UserPreferencesMessageHandler(),
                         new TopologyViewMessageHandler(),
+                        new Topo2ViewMessageHandler(),
                         new MapSelectorMessageHandler(),
                         new DeviceViewMessageHandler(),
                         new LinkViewMessageHandler(),
@@ -172,11 +179,11 @@ public class UiExtensionManager
                         new UiTopoMap("americas", "North, Central and South America", "*americas", 0.7),
                         new UiTopoMap("n_america", "North America", "*n_america", 0.9),
                         new UiTopoMap("s_america", "South America", "*s_america", 0.9),
-                        new UiTopoMap("usa", "United States", "*continental_us", 1.0),
+                        new UiTopoMap("usa", "United States", "*continental_us", 1.3),
                         new UiTopoMap("bayareaGEO", "Bay Area, California", "*bayarea", 1.0),
-                        new UiTopoMap("europe", "Europe", "*europe", 9.0),
+                        new UiTopoMap("europe", "Europe", "*europe", 10.0),
                         new UiTopoMap("italy", "Italy", "*italy", 0.8),
-                        new UiTopoMap("uk", "United Kingdom and Ireland", "*uk", 0.6),
+                        new UiTopoMap("uk", "United Kingdom and Ireland", "*uk", 2.0),
                         new UiTopoMap("japan", "Japan", "*japan", 0.8),
                         new UiTopoMap("s_korea", "South Korea", "*s_korea", 0.75),
                         new UiTopoMap("taiwan", "Taiwan", "*taiwan", 0.7),
@@ -196,11 +203,11 @@ public class UiExtensionManager
     @Activate
     public void activate() {
         Serializer serializer = Serializer.using(KryoNamespaces.API,
-                        ObjectNode.class, ArrayNode.class,
-                        JsonNodeFactory.class, LinkedHashMap.class,
-                        TextNode.class, BooleanNode.class,
-                        LongNode.class, DoubleNode.class, ShortNode.class,
-                        IntNode.class, NullNode.class);
+                ObjectNode.class, ArrayNode.class,
+                JsonNodeFactory.class, LinkedHashMap.class,
+                TextNode.class, BooleanNode.class,
+                LongNode.class, DoubleNode.class, ShortNode.class,
+                IntNode.class, NullNode.class);
 
         prefsConsistentMap = storageService.<String, ObjectNode>consistentMapBuilder()
                 .withName(ONOS_USER_PREFERENCES)

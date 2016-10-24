@@ -5,11 +5,44 @@
             Flows for Device {{devId || "(No device selected)"}}
             ({{tableData.length}} total)
         </h2>
+
+        <div class="search">
+            <input type="text" ng-model="query" placeholder="Search"/>
+            <select ng-model="queryBy">
+                <option value="" disabled>Search By</option>
+                <option value="$">All</option>
+                <option value="id">Flow ID</option>
+                <option value="appId">App ID</option>
+                <option value="groupId">Group ID</option>
+                <option value="tableId">Table ID</option>
+                <option value="priority">Priority</option>
+                <option value="timeout">Timeout</option>
+                <option value="permanent">Permanent</option>
+                <option value="state">State</option>
+            </select>
+        </div>
+
         <div class="ctrl-btns">
             <div class="refresh" ng-class="{active: autoRefresh}"
                  icon icon-size="42" icon-id="refresh"
                  tooltip tt-msg="autoRefreshTip"
                  ng-click="toggleRefresh()"></div>
+
+            <div class="separator"></div>
+
+            <span ng-if="brief">
+            <div class="active"
+                 icon icon-id="plus" icon-size="42"
+                 tooltip tt-msg="detailTip"
+                 ng-click="briefToggle()"> </div>
+            </span>
+
+            <span ng-if="!brief">
+            <div class="active"
+                 icon icon-id="minus" icon-size="42"
+                 tooltip tt-msg="briefTip"
+                 ng-click="briefToggle()"> </div>
+            </span>
 
             <div class="separator"></div>
 
@@ -35,6 +68,7 @@
                  icon icon-id="meterTable" icon-size="42"
                  tooltip tt-msg="meterTip"
                  ng-click="nav('meter')"></div>
+
         </div>
     </div>
 
@@ -64,7 +98,7 @@
                     </td>
                 </tr>
 
-                <tr ng-repeat-start="flow in tableData track by $index"
+                <tr ng-repeat-start="flow in tableData | filter:queryFilter track by $index"
                     ng-repeat-complete row-id="{{flow.id}}">
                     <td>{{flow.id}}</td>
                     <td>{{flow.appId}}</td>
@@ -77,10 +111,10 @@
                     <td class="right">{{flow.packets}}</td>
                     <td class="right">{{flow.bytes}}</td>
                 </tr>
-                <tr row-id="{{flow.id}}">
-                    <td class="selector" colspan="10">{{flow.selector}}</td>
+                <tr row-id="{{flow.id}}" ng-hide="brief">
+                    <td class="selector" colspan="10" >{{flow.selector}} </td>
                 </tr>
-                <tr row-id="{{flow.id}}" ng-repeat-end>
+                <tr row-id="{{flow.id}}" ng-repeat-end ng-hide="brief">
                     <td class="treatment" colspan="10">{{flow.treatment}}</td>
                 </tr>
             </table>

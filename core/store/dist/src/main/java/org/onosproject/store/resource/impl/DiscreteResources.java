@@ -18,7 +18,6 @@ package org.onosproject.store.resource.impl;
 import org.onosproject.net.resource.DiscreteResource;
 import org.onosproject.net.resource.DiscreteResourceId;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -75,7 +74,7 @@ interface DiscreteResources {
      * @return true this instance contains a resource included in the given resources,
      * otherwise false.
      */
-    boolean containsAny(List<DiscreteResource> other);
+    boolean containsAny(Set<DiscreteResource> other);
 
     /**
      * Returns a union set of this instance and the given instance.
@@ -87,18 +86,18 @@ interface DiscreteResources {
     DiscreteResources add(DiscreteResources other);
 
     /**
-     * Returns a difference set of this instance and the given resources.
-     * Note: This method returns a new instance, not mutate the current intance.
-     *
-     * @param removed resources
-     * @return a new DiscreteResources instance representing a difference set
-     */
-    DiscreteResources remove(List<DiscreteResource> removed);
-
-    /**
      * Returns all of resources this instance holds.
      *
      * @return all resources
      */
     Set<DiscreteResource> values();
+
+    /**
+     * Returns all of resources this instance holds and filtered by the specified type.
+     *
+     * @param cls class instance of the resource value
+     * @param <T> type of the resource value
+     * @return all of resources this instance holds and filtered by the specified type
+     */
+    <T> Set<DiscreteResource> valuesOf(Class<T> cls);
 }

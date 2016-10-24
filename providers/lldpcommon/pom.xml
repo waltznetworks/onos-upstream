@@ -22,7 +22,7 @@
     <parent>
         <artifactId>onos-providers</artifactId>
         <groupId>org.onosproject</groupId>
-        <version>1.6.0</version>
+        <version>1.7.1-SNAPSHOT</version>
     </parent>
 
 
@@ -41,7 +41,6 @@
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>4.11</version>
             <scope>test</scope>
         </dependency>
 
@@ -54,7 +53,6 @@
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-api</artifactId>
-            <version>${project.version}</version>
             <classifier>tests</classifier>
             <scope>test</scope>
         </dependency>

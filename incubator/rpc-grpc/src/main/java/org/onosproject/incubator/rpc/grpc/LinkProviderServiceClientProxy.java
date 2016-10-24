@@ -15,7 +15,7 @@
  */
 package org.onosproject.incubator.rpc.grpc;
 
-import static org.onosproject.incubator.rpc.grpc.GrpcDeviceUtils.asMap;
+import static org.onosproject.incubator.protobuf.net.ProtobufUtils.asMap;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -38,7 +38,7 @@ import org.onosproject.net.provider.ProviderId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.api.client.repackaged.com.google.common.annotations.Beta;
+import com.google.common.annotations.Beta;
 import com.google.common.util.concurrent.ListenableFuture;
 
 import io.grpc.Channel;

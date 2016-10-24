@@ -250,7 +250,7 @@ public class OspfInterfaceImpl implements OspfInterface {
 
 
     /**
-     * Adds LSAHeader to map.
+     * Adds LSA header to map.
      *
      * @param lsaHeader LSA header instance
      */
@@ -539,7 +539,7 @@ public class OspfInterfaceImpl implements OspfInterface {
      */
     public void waitTimer(Channel ch) throws Exception {
         log.debug("OSPFInterfaceChannelHandler::waitTimer ");
-        //section 9.4
+        //According to RFC-2328 section 9.4
         if (state() == OspfInterfaceState.WAITING) {
             electRouter(ch);
         }
@@ -861,7 +861,6 @@ public class OspfInterfaceImpl implements OspfInterface {
                     nbr.setNeighborBdr(helloPacket.bdr());
                     nbr.setNeighborDr(helloPacket.dr());
                 }
-
             }
         }
     }
@@ -1695,7 +1694,6 @@ public class OspfInterfaceImpl implements OspfInterface {
                 } catch (Exception e) {
                     log.debug("Exception at wait timer ...!!!");
                 }
-
             }
         }
     }
