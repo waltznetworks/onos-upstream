@@ -27,6 +27,7 @@ import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
 import org.onosproject.cfg.ComponentConfigService;
+import org.onosproject.cfg.ConfigProperty;
 import org.onosproject.core.CoreService;
 import org.onosproject.net.device.DeviceEvent;
 import org.onosproject.net.device.DeviceEvent.Type;
@@ -124,6 +125,10 @@ public class OpenFlowControllerImpl implements OpenFlowController {
             label = "Number of controller worker threads")
     private int workerThreads = DEFAULT_WORKER_THREADS;
 
+    @Property(name = "shouldIgnorePortDownMsg", boolValue = false,
+            label = "Whether port down message will be ignored")
+    private boolean shouldIgnorePortDownMsg;
+
     protected ExecutorService executorMsgs =
         Executors.newFixedThreadPool(32, groupedThreads("onos/of", "event-stats-%d", log));
 
@@ -201,6 +206,13 @@ public class OpenFlowControllerImpl implements OpenFlowController {
 
     @Modified
     public void modified(ComponentContext context) {
+        Set<ConfigProperty> configProperties = cfgService.getProperties(getClass().getCanonicalName());
+        for (ConfigProperty property : configProperties) {
+            if (property.name().equals("shouldIgnorePortDownMsg")) {
+                shouldIgnorePortDownMsg = property.asBoolean();
+            }
+        }
+
         ctrl.stop();
         ctrl.setConfigParams(context.getProperties());
         ctrl.start(agent, driverService);
@@ -295,8 +307,11 @@ public class OpenFlowControllerImpl implements OpenFlowController {
 
         switch (msg.getType()) {
         case PORT_STATUS:
-            for (OpenFlowSwitchListener l : ofSwitchListener) {
-                l.portChanged(dpid, (OFPortStatus) msg);
+            OFPortStatus status = (OFPortStatus) msg;
+            if (!shouldIgnorePortDownMsg || status.getReason() != OFPortReason.DELETE) {
+                for (OpenFlowSwitchListener l : ofSwitchListener) {
+                    l.portChanged(dpid, (OFPortStatus) msg);
+                }
             }
             break;
         case FEATURES_REPLY:
