@@ -364,20 +364,17 @@ public class NetconfDeviceProvider extends AbstractProvider
         if (device.is(LinkDiscovery.class)) {
             LinkDiscovery linkDiscovery = device.as(LinkDiscovery.class);
             Set<LinkDescription> aliveLinkDescriptions = linkDiscovery.getLinks();
+
+            Preconditions.checkNotNull(aliveLinkDescriptions, "aliveLinkDescription is null");
+
             /* Update alive links */
-            if (aliveLinkDescriptions != null) {
-                for (LinkDescription desc : aliveLinkDescriptions) {
-                    linkProviderService.linkDetected(desc);
-                }
-            }
+            aliveLinkDescriptions.forEach(desc -> linkProviderService.linkDetected(desc));
+
             /* Remove vanished links */
-            Set<LinkDescription> vanishedLinkDescription = linkDescriptionsOfDevice.get(deviceId);
-            vanishedLinkDescription.removeAll(aliveLinkDescriptions);
-            if (!vanishedLinkDescription.isEmpty()) {
-                for (LinkDescription desc : vanishedLinkDescription) {
-                    linkProviderService.linkVanished(desc);
-                }
-            }
+            Set<LinkDescription> vanishedLinkDescriptions = linkDescriptionsOfDevice.get(deviceId);
+            vanishedLinkDescriptions.removeAll(aliveLinkDescriptions);
+            vanishedLinkDescriptions.forEach(desc -> linkProviderService.linkVanished(desc));
+
             /* Track alive links */
             linkDescriptionsOfDevice.put(deviceId, aliveLinkDescriptions);
         } else {
