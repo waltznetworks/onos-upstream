@@ -5,8 +5,10 @@ import org.onosproject.drivers.utilities.XmlConfigParser;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.Link;
+import org.onosproject.net.Port;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.behaviour.LinkDiscovery;
+import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.driver.AbstractHandlerBehaviour;
 import org.onosproject.net.link.DefaultLinkDescription;
 import org.onosproject.net.link.LinkDescription;
@@ -17,11 +19,14 @@ import org.slf4j.Logger;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static org.onosproject.net.AnnotationKeys.PORT_IP;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
@@ -85,17 +90,16 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
      */
     private Set<LinkDescription> parseCsr1000vOspfLinks(HierarchicalConfiguration cfg) {
         Set<LinkDescription> links = new HashSet<>();
-        DeviceId localDevice = handler().data().deviceId();
-        DeviceId remoteDevice;
+
+        DeviceId localDeviceId = handler().data().deviceId();   // Must be a NETCONF device
+        DeviceId remoteDeviceId;                                // Could be an OpenFlow, SNMP, or NETCONF device
         PortNumber localPortNumber;
         PortNumber remotePortNumber;
-        ConnectPoint local;
-        ConnectPoint remote;
 
         List<Object> ospfLinkInfo = cfg.getList("data.cli-oper-data-block.item.response");
         String[] array;
         for (int i = 0; i < ospfLinkInfo.size(); i++) {
-            log.info("OSPF neighbor: {}", ospfLinkInfo.get(i).toString());
+            log.debug("OSPF neighbor: {}", ospfLinkInfo.get(i).toString());
             /* Example string:
              *   192.168.0.3       1   DOWN            00:00:00    10.100.2.3      GigabitEthernet3
              *   192.168.0.4       1   FULL/DR         00:00:31    10.100.4.4      GigabitEthernet4
@@ -114,19 +118,63 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
                 continue;   // skip if there is no bi-directional link
             }
 
-            remoteDevice = DeviceId.deviceId("netconf:" + array[0] + ":22");    // Cisco devices use SSHv2 (port 22)
-            // Fixme: this works for devices connected through NETCONF on port 22 and we should find a better solution
-            remotePortNumber = PortNumber.ANY;                                  // Mark ANY here
+            remoteDeviceId = getDeviceId(array[0]);
+            if (remoteDeviceId == null) {
+                continue;
+            }
 
+            remotePortNumber = getPortNumber(remoteDeviceId, array[4]);
+            if (remotePortNumber.equals(PortNumber.ANY)) {
+                log.warn("Cannot resolve port number of IP:{} on router:{}", array[4], array[0]);
+            }
 
             localPortNumber = PortNumber.portNumber(Long.parseLong(array[5].replace("GigabitEthernet", "")));
 
-            local = new ConnectPoint(localDevice, localPortNumber);
-            remote = new ConnectPoint(remoteDevice, remotePortNumber);
-
-            links.add(new DefaultLinkDescription(local, remote, Link.Type.DIRECT, true));
+            links.add(new DefaultLinkDescription(
+                    new ConnectPoint(localDeviceId, localPortNumber),
+                    new ConnectPoint(remoteDeviceId, remotePortNumber),
+                    Link.Type.DIRECT));
         }
 
         return links;
+    }
+
+    /**
+     * Use OSPF router ID (IP address) to resolve device ID.
+     */
+    private DeviceId getDeviceId(String ip) {
+        DeviceService deviceService = checkNotNull(handler().get(DeviceService.class));
+        DeviceId deviceId;
+
+        try {
+            deviceId = DeviceId.deviceId(new URI("netconf", ip + ":" + 22, null));      // check if port is 22
+            if (deviceService.getDevice(deviceId) != null) {
+                return deviceId;
+            }
+            deviceId = DeviceId.deviceId(new URI("netconf", ip + ":" + 830, null));     // check if port is 830
+            if (deviceService.getDevice(deviceId) != null) {
+                return deviceId;
+            }
+            // TODO: add support of SNMP and OpenFlow devices
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("Unable to resolve deviceID for IP:" + ip, e);
+        }
+        return null;
+    }
+
+    /**
+     * Use port IP address to resolve port number. We need port IP address to be added to port annotation dict
+     * in advance.
+     */
+    private PortNumber getPortNumber(DeviceId deviceId, String portIp) {
+        DeviceService deviceService = checkNotNull(handler().get(DeviceService.class));
+        List<Port> ports = deviceService.getPorts(deviceId);
+        for (Port port : ports) {
+            log.debug("{} port {} has IP:{}", deviceId, port.number(), port.annotations().value(PORT_IP).toString());
+            if (port.annotations().value(PORT_IP).contains(portIp)) {
+                return port.number();
+            }
+        }
+        return PortNumber.ANY;
     }
 }
