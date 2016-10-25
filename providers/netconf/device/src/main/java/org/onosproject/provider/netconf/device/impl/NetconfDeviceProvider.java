@@ -36,6 +36,7 @@ import org.onosproject.net.DeviceId;
 import org.onosproject.net.MastershipRole;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.SparseAnnotations;
+import org.onosproject.net.behaviour.LinkDiscovery;
 import org.onosproject.net.behaviour.PortDiscovery;
 import org.onosproject.net.behaviour.PortStatsQuery;
 import org.onosproject.net.config.ConfigFactory;
@@ -55,6 +56,10 @@ import org.onosproject.net.device.PortStatistics;
 import org.onosproject.net.key.DeviceKey;
 import org.onosproject.net.key.DeviceKeyAdminService;
 import org.onosproject.net.key.DeviceKeyId;
+import org.onosproject.net.link.LinkDescription;
+import org.onosproject.net.link.LinkProvider;
+import org.onosproject.net.link.LinkProviderRegistry;
+import org.onosproject.net.link.LinkProviderService;
 import org.onosproject.net.provider.AbstractProvider;
 import org.onosproject.net.provider.ProviderId;
 import org.onosproject.netconf.NetconfController;
@@ -68,6 +73,10 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -85,13 +94,16 @@ import static org.slf4j.LoggerFactory.getLogger;
  */
 @Component(immediate = true)
 public class NetconfDeviceProvider extends AbstractProvider
-        implements DeviceProvider {
+        implements DeviceProvider, LinkProvider {
 
     public static final String ACTIVE = "active";
     private final Logger log = getLogger(getClass());
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected DeviceProviderRegistry providerRegistry;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected LinkProviderRegistry linkProviderRegistry;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected NetconfController controller;
@@ -142,6 +154,8 @@ public class NetconfDeviceProvider extends AbstractProvider
                                                     "portstatspolling-executor-%d", log));
 
     private DeviceProviderService providerService;
+    private LinkProviderService linkProviderService;
+    private Map<DeviceId, Set<LinkDescription>> linkDescriptionsOfDevice;
     private NetconfDeviceListener innerNodeListener = new InnerNetconfDeviceListener();
     private InternalDeviceListener deviceListener = new InternalDeviceListener();
     private NodeId localNodeId;
@@ -167,6 +181,8 @@ public class NetconfDeviceProvider extends AbstractProvider
     public void activate() {
         active = true;
         providerService = providerRegistry.register(this);
+        linkProviderService = linkProviderRegistry.register(this);
+        linkDescriptionsOfDevice = new HashMap<>();
         appId = coreService.registerApplication(APP_NAME);
         cfgService.registerConfigFactory(factory);
         cfgService.addListener(cfgListener);
@@ -191,7 +207,10 @@ public class NetconfDeviceProvider extends AbstractProvider
         controller.removeDeviceListener(innerNodeListener);
         deviceService.removeListener(deviceListener);
         providerRegistry.unregister(this);
+        linkProviderRegistry.unregister(this);
         providerService = null;
+        linkProviderService = null;
+        linkDescriptionsOfDevice = null;
         cfgService.unregisterConfigFactory(factory);
         scheduledTask.cancel(true);
         scheduledPortStatsPollingTask.cancel(true);
@@ -313,6 +332,7 @@ public class NetconfDeviceProvider extends AbstractProvider
         if (isReachable(deviceId)) {
             log.debug("Netconf device {} is reachable, updating ports and stats", deviceId);
             updatePortsAndStats(deviceId);
+            updateLinks(deviceId);
         } else {
             log.debug("Netconf device {} is unreachable, disconnecting", deviceId);
             disconnectDevice(deviceId);
@@ -334,6 +354,34 @@ public class NetconfDeviceProvider extends AbstractProvider
             }
         } else {
             log.warn("No portStatsQuery behaviour for device {}", deviceId);
+        }
+    }
+
+    private void updateLinks(DeviceId deviceId) {
+        Device device = deviceService.getDevice(deviceId);
+        /* Initialize an empty set for device upon first call */
+        linkDescriptionsOfDevice.putIfAbsent(deviceId, new HashSet<>());
+        if (device.is(LinkDiscovery.class)) {
+            LinkDiscovery linkDiscovery = device.as(LinkDiscovery.class);
+            Set<LinkDescription> aliveLinkDescriptions = linkDiscovery.getLinks();
+            /* Update alive links */
+            if (aliveLinkDescriptions != null) {
+                for (LinkDescription desc : aliveLinkDescriptions) {
+                    linkProviderService.linkDetected(desc);
+                }
+            }
+            /* Remove vanished links */
+            Set<LinkDescription> vanishedLinkDescription = linkDescriptionsOfDevice.get(deviceId);
+            vanishedLinkDescription.removeAll(aliveLinkDescriptions);
+            if (!vanishedLinkDescription.isEmpty()) {
+                for (LinkDescription desc : vanishedLinkDescription) {
+                    linkProviderService.linkVanished(desc);
+                }
+            }
+            /* Track alive links */
+            linkDescriptionsOfDevice.put(deviceId, aliveLinkDescriptions);
+        } else {
+            log.warn("No LinkDiscovery behaviour for device {}", deviceId);
         }
     }
 
