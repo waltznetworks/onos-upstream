@@ -34,6 +34,7 @@ public class DefaultLink extends AbstractProjectableModel implements Link {
     private final Type type;
     private final State state;
     private final boolean isExpected;
+    private int weight;
 
     /**
      * Creates an infrastructure link using the supplied information.
@@ -48,6 +49,7 @@ public class DefaultLink extends AbstractProjectableModel implements Link {
     protected DefaultLink(ProviderId providerId, ConnectPoint src, ConnectPoint dst,
                        Type type, State state, Annotations... annotations) {
         this(providerId, src, dst, type, state, false, annotations);
+        this.weight = 1;
     }
 
     /**
@@ -72,6 +74,7 @@ public class DefaultLink extends AbstractProjectableModel implements Link {
         this.type = type;
         this.state = state;
         this.isExpected = isExpected;
+        this.weight = 1;
     }
 
     @Override
@@ -112,6 +115,16 @@ public class DefaultLink extends AbstractProjectableModel implements Link {
     }
 
     @Override
+    public void setWeight(int weight) {
+        this.weight = weight;
+    }
+
+    @Override
+    public int getWeight() {
+        return weight;
+    }
+
+    @Override
     public boolean equals(Object obj) {
         if (this == obj) {
             return true;
@@ -134,6 +147,7 @@ public class DefaultLink extends AbstractProjectableModel implements Link {
                 .add("type", type)
                 .add("state", state)
                 .add("expected", isExpected)
+                .add("weight", weight)
                 .toString();
     }
 
@@ -157,6 +171,7 @@ public class DefaultLink extends AbstractProjectableModel implements Link {
         private Type type;
         private State state = ACTIVE;
         private boolean isExpected = false;
+        private int weight = 1;
 
         protected Builder() {
             // Hide constructor
@@ -240,6 +255,17 @@ public class DefaultLink extends AbstractProjectableModel implements Link {
         }
 
         /**
+         * Sets the weight to be used by the builder.
+         *
+         * @param weight the weight
+         * @return self
+         */
+         public Builder weight(int weight) {
+             this.weight = weight;
+             return this;
+         }
+
+        /**
          * Builds a default link object from the accumulated parameters.
          *
          * @return default link object
@@ -250,9 +276,11 @@ public class DefaultLink extends AbstractProjectableModel implements Link {
             checkNotNull(type, "Type cannot be null");
             checkNotNull(providerId, "Provider Id cannot be null");
 
-            return new DefaultLink(providerId, src, dst,
-                                   type, state,
-                                   isExpected, annotations);
+            DefaultLink link = new DefaultLink(providerId, src, dst,
+                                               type, state,
+                                               isExpected, annotations);
+            link.setWeight(weight);
+            return link;
         }
 
     }
