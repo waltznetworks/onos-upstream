@@ -76,9 +76,6 @@ public class PortStatsCollector implements TimerTask {
 
     synchronized void adjustPollInterval(int pollInterval) {
         this.refreshInterval = pollInterval;
-        // task.cancel();
-        // task = new InternalTimerTask();
-        // timer.scheduleAtFixedRate(task, pollInterval * SECONDS, pollInterval * 1000);
     }
 
     /**
