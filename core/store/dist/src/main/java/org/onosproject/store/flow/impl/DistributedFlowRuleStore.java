@@ -612,6 +612,11 @@ public class DistributedFlowRuleStore
     }
 
     @Override
+    public void purgeFlowRules() {
+        flowTable.purgeFlowRules();
+    }
+
+    @Override
     public void batchOperationComplete(FlowRuleBatchEvent event) {
         //FIXME: need a per device pending response
         NodeId nodeId = pendingResponses.remove(event.subject().batchId());
@@ -840,6 +845,10 @@ public class DistributedFlowRuleStore
             List<NodeId> deviceStandbys = replicaInfoManager.getReplicaInfoFor(deviceId).backups();
             // pick the standby which is most likely to become next master
             return deviceStandbys.isEmpty() ? null : deviceStandbys.get(0);
+        }
+
+        public void purgeFlowRules() {
+            flowEntries.clear();
         }
 
         private void backup() {

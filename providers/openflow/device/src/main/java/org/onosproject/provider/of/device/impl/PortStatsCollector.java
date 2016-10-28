@@ -70,15 +70,12 @@ public class PortStatsCollector implements TimerTask {
         if (!stopped && !timeout.isCancelled()) {
             log.trace("Scheduling stats collection in {} seconds for {}",
                     this.refreshInterval, this.sw.getStringId());
-            timeout.getTimer().newTimeout(this, refreshInterval, TimeUnit.SECONDS);
+            timeout.getTimer().newTimeout(this, refreshInterval, TimeUnit.MILLISECONDS);
         }
     }
 
     synchronized void adjustPollInterval(int pollInterval) {
         this.refreshInterval = pollInterval;
-        // task.cancel();
-        // task = new InternalTimerTask();
-        // timer.scheduleAtFixedRate(task, pollInterval * SECONDS, pollInterval * 1000);
     }
 
     /**
