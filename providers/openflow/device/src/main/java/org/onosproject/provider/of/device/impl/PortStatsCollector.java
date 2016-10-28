@@ -70,15 +70,21 @@ public class PortStatsCollector implements TimerTask {
         if (!stopped && !timeout.isCancelled()) {
             log.trace("Scheduling stats collection in {} seconds for {}",
                     this.refreshInterval, this.sw.getStringId());
-            timeout.getTimer().newTimeout(this, refreshInterval, TimeUnit.SECONDS);
+            timeout.getTimer().newTimeout(this, refreshInterval, TimeUnit.MILLISECONDS);
         }
+    }
+
+    /**
+     * Starts the port statistic collector.
+     */
+    public synchronized void start() {
+        log.info("Starting Port Stats collection thread for {}", sw.getStringId());
+        stopped = false;
+        timeout = timer.newTimeout(this, refreshInterval, TimeUnit.MILLISECONDS);
     }
 
     synchronized void adjustPollInterval(int pollInterval) {
         this.refreshInterval = pollInterval;
-        // task.cancel();
-        // task = new InternalTimerTask();
-        // timer.scheduleAtFixedRate(task, pollInterval * SECONDS, pollInterval * 1000);
     }
 
     /**
@@ -94,15 +100,6 @@ public class PortStatsCollector implements TimerTask {
                 .setXid(statsXid)
                 .build();
         sw.sendMsg(statsRequest);
-    }
-
-    /**
-     * Starts the collector.
-     */
-    public synchronized void start() {
-        log.info("Starting Port Stats collection thread for {}", sw.getStringId());
-        stopped = false;
-        timeout = timer.newTimeout(this, 1, TimeUnit.SECONDS);
     }
 
     /**
