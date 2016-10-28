@@ -626,6 +626,11 @@ public class DistributedFlowRuleStore
     }
 
     @Override
+    public void purgeFlowRules() {
+        flowTable.purgeFlowRules();
+    }
+
+    @Override
     public void batchOperationComplete(FlowRuleBatchEvent event) {
         //FIXME: need a per device pending response
         NodeId nodeId = pendingResponses.remove(event.subject().batchId());
@@ -847,11 +852,15 @@ public class DistributedFlowRuleStore
             flowEntries.remove(deviceId);
         }
 
+        public void purgeFlowRules() {
+            flowEntries.clear();
+        }
+
         private List<NodeId> getBackupNodes(DeviceId deviceId) {
             // The returned backup node list is in the order of preference i.e. next likely master first.
             List<NodeId> allPossibleBackupNodes = replicaInfoManager.getReplicaInfoFor(deviceId).backups();
             return ImmutableList.copyOf(allPossibleBackupNodes)
-                                .subList(0, Math.min(allPossibleBackupNodes.size(), backupCount));
+                    .subList(0, Math.min(allPossibleBackupNodes.size(), backupCount));
         }
 
         private void backup() {

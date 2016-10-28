@@ -203,6 +203,7 @@ public class DistributedGroupStore
         groupStoreEntriesByKey.addListener(mapListener);
         log.debug("Current size of groupstorekeymap:{}",
                   groupStoreEntriesByKey.size());
+        synchronizeGroupStoreEntries();
 
         log.debug("Creating Consistent map pendinggroupkeymap");
 
@@ -250,6 +251,18 @@ public class DistributedGroupStore
             return groupTopic;
         }
     };
+
+
+    private void synchronizeGroupStoreEntries() {
+        Map<GroupStoreKeyMapKey, StoredGroupEntry> groupEntryMap = groupStoreEntriesByKey.asJavaMap();
+        for (Entry<GroupStoreKeyMapKey, StoredGroupEntry> entry : groupEntryMap.entrySet()) {
+            GroupStoreKeyMapKey key = entry.getKey();
+            StoredGroupEntry value = entry.getValue();
+
+            ConcurrentMap<GroupId, StoredGroupEntry> groupIdTable = getGroupIdTable(value.deviceId());
+            groupIdTable.put(value.id(), value);
+        }
+    }
 
     /**
      * Returns the group store eventual consistent key map.
@@ -711,7 +724,7 @@ public class DistributedGroupStore
                                                 newGroup.appCookie()), newGroup);
             notifyDelegate(new GroupEvent(Type.GROUP_UPDATE_REQUESTED, newGroup));
         } else {
-            log.warn("updateGroupDescriptionInternal with type {}: No "
+            log.debug("updateGroupDescriptionInternal with type {}: No "
                              + "change in the buckets in update", type);
         }
     }
@@ -913,19 +926,28 @@ public class DistributedGroupStore
         }
     }
 
+    private void purgeGroupEntries(Set<Entry<GroupStoreKeyMapKey, StoredGroupEntry>> entries) {
+        entries.forEach(entry -> {
+            groupStoreEntriesByKey.remove(entry.getKey());
+            notifyDelegate(new GroupEvent(Type.GROUP_REMOVED, entry.getValue()));
+        });
+    }
+
     @Override
     public void purgeGroupEntry(DeviceId deviceId) {
-        Set<Entry<GroupStoreKeyMapKey, StoredGroupEntry>> entryPendingRemove =
+        Set<Entry<GroupStoreKeyMapKey, StoredGroupEntry>> entriesPendingRemove =
                 new HashSet<>();
 
         getGroupStoreKeyMap().entrySet().stream()
                 .filter(entry -> entry.getKey().deviceId().equals(deviceId))
-                .forEach(entryPendingRemove::add);
+                .forEach(entriesPendingRemove::add);
 
-        entryPendingRemove.forEach(entry -> {
-            groupStoreEntriesByKey.remove(entry.getKey());
-            notifyDelegate(new GroupEvent(Type.GROUP_REMOVED, entry.getValue()));
-        });
+        purgeGroupEntries(entriesPendingRemove);
+    }
+
+    @Override
+    public void purgeGroupEntries() {
+        purgeGroupEntries(getGroupStoreKeyMap().entrySet());
     }
 
     @Override
