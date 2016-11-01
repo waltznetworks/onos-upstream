@@ -146,7 +146,16 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
         DeviceService deviceService = checkNotNull(handler().get(DeviceService.class));
         DeviceId deviceId;
 
+        /* The remote device could be an OpenFlow device, an SNMP devices, or a NETCONF device. In ONOS,
+         * these devices will have different URI prefix. For example, an OpenFlow device will have 'of' prefix
+         * and no port number; an SNMP device, similarly, will have 'snmp' prefix; a NETCONF device will have
+         * 'netconf' prefix and so on. This method should serve as a DeviceId resolver. That is, given an IP,
+         * try to look for the device in ONOS and return its DeviceId.
+         */
         try {
+            /* Test if the remote device is a NETCONF device. NETCONF protocol runs on either port 22 on Cisco
+             * routers through SSHv2 tunnels or port 830 on Juniper routers through non-encrypted tunnels.
+             */
             deviceId = DeviceId.deviceId(new URI("netconf", ip + ":" + 22, null));      // check if port is 22
             if (deviceService.getDevice(deviceId) != null) {
                 return deviceId;
