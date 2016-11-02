@@ -36,6 +36,8 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
         implements LinkDiscovery {
 
     private final Logger log = getLogger(getClass());
+    private static final int SSH_PORT = 22;
+    private static final int NETCONF_PORT = 830;
 
     @Override
     public Set<LinkDescription> getLinks() {
@@ -170,11 +172,11 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
             /* Test if the remote device is a NETCONF device. NETCONF protocol runs on either port 22 on Cisco
              * routers through SSHv2 tunnels or port 830 on Juniper routers through non-encrypted tunnels.
              */
-            deviceId = DeviceId.deviceId(new URI("netconf", ip + ":" + 22, null));      // check if port is 22
+            deviceId = DeviceId.deviceId(new URI("netconf", ip + ":" + SSH_PORT, null));      // check if port is 22
             if (deviceService.getDevice(deviceId) != null) {
                 return deviceId;
             }
-            deviceId = DeviceId.deviceId(new URI("netconf", ip + ":" + 830, null));     // check if port is 830
+            deviceId = DeviceId.deviceId(new URI("netconf", ip + ":" + NETCONF_PORT, null));     // check if port is 830
             if (deviceService.getDevice(deviceId) != null) {
                 return deviceId;
             }
