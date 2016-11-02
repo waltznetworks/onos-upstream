@@ -97,38 +97,52 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
         PortNumber remotePortNumber;
 
         List<Object> ospfLinkInfo = cfg.getList("data.cli-oper-data-block.item.response");
-        String[] array;
-        for (int i = 0; i < ospfLinkInfo.size(); i++) {
-            log.debug("OSPF neighbor: {}", ospfLinkInfo.get(i).toString());
-            /* Example string:
-             *   192.168.0.3       1   DOWN            00:00:00    10.100.2.3      GigabitEthernet3
-             *   192.168.0.4       1   FULL/DR         00:00:31    10.100.4.4      GigabitEthernet4
-             *
-             * The first column is the router ID, which Cisco by default use the addresses set on GigabitEthernet1;
-             * the second column is the priority and we don't use it for link discovery; the third one is the status
-             * of the link. As long as it contains "FULL", we can safely assume there is bi-directional full-speed
-             * link; the fourth columns is the IP address set on the interface on the neighbor, we will need to use
-             * this to find out port number later; the fifth column is the local interface of the link and we should
-             * convert it to local port number. Refer to:
-             * http://www.cisco.com/c/en/us/support/docs/ip/open-shortest-path-first-ospf/13688-16.html
-             * for more detail.
-             */
-            array = ospfLinkInfo.get(i).toString().split(" +");                 // split with multiple spaces
-            if (!array[2].contains("FULL") || array.length != 6) {
+        if (ospfLinkInfo.size() >= 2) {
+            log.error("Replied message contains multiple <response> tags");
+        }
+        log.debug("OSPF neighbor: {}", ospfLinkInfo.get(0).toString());
+
+        /* Example string:
+         *   192.168.0.3       1   DOWN            00:00:00    10.100.2.3      GigabitEthernet3
+         *   192.168.0.4       1   FULL/DR         00:00:31    10.100.4.4      GigabitEthernet4
+         *
+         * The first column is the router ID, which Cisco by default use the addresses set on GigabitEthernet1;
+         * the second column is the priority and we don't use it for link discovery; the third one is the status
+         * of the link. As long as it contains "FULL", we can safely assume there is bi-directional full-speed
+         * link; the fourth columns is the IP address set on the interface on the neighbor, we will need to use
+         * this to find out port number later; the fifth column is the local interface of the link and we should
+         * convert it to local port number. Refer to:
+         * http://www.cisco.com/c/en/us/support/docs/ip/open-shortest-path-first-ospf/13688-16.html
+         * for more detail.
+         */
+
+        String[] entries = ospfLinkInfo.get(0).toString().split("\n");          // split with newline characters
+
+        String[] columns;
+        for (int i = 0; i < entries.length; i++) {
+            columns = entries[i].split(" +");                                   // split with multiple spaces
+
+            if (columns.length != 6) {
+                log.debug("Entry {} has wrong format, skipping...", entries[i]);
+                continue;   // skip if the entry has wrong format
+            }
+
+            if (!columns[2].contains("FULL")) {
                 continue;   // skip if there is no bi-directional link
             }
 
-            remoteDeviceId = getDeviceId(array[0]);
+            remoteDeviceId = getDeviceId(columns[0]);
             if (remoteDeviceId == null) {
+                log.warn("Cannot resolve ID of remote device {}, skipping...", columns[0]);
                 continue;
             }
 
-            remotePortNumber = getPortNumber(remoteDeviceId, array[4]);
+            remotePortNumber = getPortNumber(remoteDeviceId, columns[4]);
             if (remotePortNumber.equals(PortNumber.ANY)) {
-                log.warn("Cannot resolve port number of IP:{} on router:{}", array[4], array[0]);
+                log.warn("Cannot resolve port number of IP:{} on router:{}", columns[4], columns[0]);
             }
 
-            localPortNumber = PortNumber.portNumber(Long.parseLong(array[5].replace("GigabitEthernet", "")));
+            localPortNumber = PortNumber.portNumber(Long.parseLong(columns[5].replace("GigabitEthernet", "")));
 
             links.add(new DefaultLinkDescription(
                     new ConnectPoint(localDeviceId, localPortNumber),
