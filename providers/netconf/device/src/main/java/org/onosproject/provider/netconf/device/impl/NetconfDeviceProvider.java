@@ -52,6 +52,7 @@ import org.onosproject.net.device.DeviceProvider;
 import org.onosproject.net.device.DeviceProviderRegistry;
 import org.onosproject.net.device.DeviceProviderService;
 import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.device.PortDescription;
 import org.onosproject.net.device.PortStatistics;
 import org.onosproject.net.key.DeviceKey;
 import org.onosproject.net.key.DeviceKeyAdminService;
@@ -75,6 +76,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -534,16 +536,19 @@ public class NetconfDeviceProvider extends AbstractProvider
 
     private void discoverPorts(DeviceId deviceId) {
         Device device = deviceService.getDevice(deviceId);
+        List<PortDescription> portDescsriptions;
         //TODO remove when PortDiscovery is removed from master
         if (device.is(PortDiscovery.class)) {
             PortDiscovery portConfig = device.as(PortDiscovery.class);
+            portDescsriptions = portConfig.getPorts();
             providerService.updatePorts(deviceId,
-                                        portConfig.getPorts());
+                                        portDescsriptions);
         } else if (device.is(DeviceDescriptionDiscovery.class)) {
             DeviceDescriptionDiscovery deviceDescriptionDiscovery =
                     device.as(DeviceDescriptionDiscovery.class);
+            portDescsriptions = deviceDescriptionDiscovery.discoverPortDetails();
             providerService.updatePorts(deviceId,
-                                        deviceDescriptionDiscovery.discoverPortDetails());
+                                        portDescsriptions);
         } else {
             log.warn("No portGetter behaviour for device {}", deviceId);
         }
