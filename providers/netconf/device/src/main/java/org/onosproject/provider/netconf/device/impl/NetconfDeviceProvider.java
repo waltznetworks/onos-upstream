@@ -17,19 +17,25 @@
 package org.onosproject.provider.netconf.device.impl;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.onlab.packet.ChassisId;
+import org.onlab.packet.MacAddress;
+import org.onlab.packet.VlanId;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
 import org.onosproject.incubator.net.config.basics.ConfigException;
+import org.onosproject.incubator.net.intf.Interface;
+import org.onosproject.incubator.net.intf.InterfaceAdminService;
 import org.onosproject.mastership.MastershipService;
 import org.onosproject.net.AnnotationKeys;
+import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.DefaultAnnotations;
 import org.onosproject.net.Device;
 import org.onosproject.net.DeviceId;
@@ -54,6 +60,7 @@ import org.onosproject.net.device.DeviceProviderService;
 import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.device.PortDescription;
 import org.onosproject.net.device.PortStatistics;
+import org.onosproject.net.host.InterfaceIpAddress;
 import org.onosproject.net.key.DeviceKey;
 import org.onosproject.net.key.DeviceKeyAdminService;
 import org.onosproject.net.key.DeviceKeyId;
@@ -121,6 +128,9 @@ public class NetconfDeviceProvider extends AbstractProvider
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected DeviceKeyAdminService deviceKeyAdminService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected InterfaceAdminService interfaceAdminService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected MastershipService mastershipService;
@@ -536,7 +546,7 @@ public class NetconfDeviceProvider extends AbstractProvider
 
     private void discoverPorts(DeviceId deviceId) {
         Device device = deviceService.getDevice(deviceId);
-        List<PortDescription> portDescsriptions;
+        List<PortDescription> portDescsriptions = Lists.newArrayList();
         //TODO remove when PortDiscovery is removed from master
         if (device.is(PortDiscovery.class)) {
             PortDiscovery portConfig = device.as(PortDiscovery.class);
@@ -552,6 +562,41 @@ public class NetconfDeviceProvider extends AbstractProvider
         } else {
             log.warn("No portGetter behaviour for device {}", deviceId);
         }
+
+        if (!portDescsriptions.isEmpty()) {
+            portDescsriptions.forEach(portDescription ->
+                    interfaceAdminService.add(interfaceBuilder(deviceId, portDescription)));
+        } else {
+            log.warn("No port description of device {} is given", deviceId);
+        }
+    }
+
+    /**
+     * Return the Interface built with given device ID and port description.
+     *
+     * @param deviceId device ID
+     * @param desc     port description
+     * @return Interface
+     */
+    public Interface interfaceBuilder(DeviceId deviceId, PortDescription desc) {
+        SparseAnnotations annotations = desc.annotations();
+        String name = annotations.value(AnnotationKeys.PORT_NAME);
+        ConnectPoint connectPoint = new ConnectPoint(deviceId, desc.portNumber());
+        List<InterfaceIpAddress> ipAddresses = Lists.newArrayList();
+
+        Preconditions.checkNotNull(annotations.value(AnnotationKeys.PORT_IP));  // cannot be null
+        ipAddresses.add(InterfaceIpAddress.valueOf(annotations.value(AnnotationKeys.PORT_IP)));
+        // TODO: allow assigning multiple IP addresses to a single interface
+
+        MacAddress mac = annotations.value(AnnotationKeys.PORT_MAC) == null ? MacAddress.ZERO :
+                MacAddress.valueOf(annotations.value(AnnotationKeys.PORT_MAC));
+
+        VlanId vlanId = annotations.value(AnnotationKeys.PORT_VLAN_ID) == null ? VlanId.NONE :
+                VlanId.vlanId(Short.parseShort(annotations.value(AnnotationKeys.PORT_VLAN_ID)));
+
+        log.debug("Found interface {}", connectPoint);
+
+        return new Interface(name, connectPoint, ipAddresses, mac, vlanId);
     }
 
     /**
