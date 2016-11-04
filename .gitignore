@@ -25,4 +25,9 @@ web/gui/src/main/webapp/tests/node_modules
 web/gui/src/test/_karma/node_modules
 web/gui/src/main/webapp/node_modules/
 
+apps/onos-app
+apps/onos-app/
+onos-app/
+*.oar
+
 npm-debug.log
