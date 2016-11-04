@@ -127,6 +127,7 @@ def onos_app(
         description = None, #TODO make this a file
         #TODO icon,
         feature_coords = None,
+        maven_coords = None,
         required_features = [ 'onos-api' ],
         required_apps = [],
         included_bundles = None,
@@ -139,7 +140,8 @@ def onos_app(
     if app_name is None:
         app_name = _get_app_name()
 
-    maven_coords = '%s:%s:oar:%s' % ( ONOS_GROUP_ID, name, ONOS_VERSION )
+    if maven_coords is None:
+        maven_coords = '%s:%s:oar:%s' % ( ONOS_GROUP_ID, name, ONOS_VERSION )
 
     if title is None:
         print "Missing title for %s" % _get_name()
@@ -203,7 +205,7 @@ def onos_app(
     sources += ['$(location %s) $(maven_coords %s)' % (i, i) for i in included_bundles]
     genrule(
         name = name + '-oar',
-        out = 'app.oar',
+        out = name + '-' + version + '.oar',
         bash = '$(exe //buck-tools:onos-app-oar) $OUT ' + ' '.join(sources),
         maven_coords = maven_coords,
         visibility = visibility,
