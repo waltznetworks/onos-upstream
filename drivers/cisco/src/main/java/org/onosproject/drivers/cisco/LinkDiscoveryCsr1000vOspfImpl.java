@@ -1,7 +1,10 @@
 package org.onosproject.drivers.cisco;
 
 import org.apache.commons.configuration.HierarchicalConfiguration;
+import org.onlab.packet.IpAddress;
 import org.onosproject.drivers.utilities.XmlConfigParser;
+import org.onosproject.incubator.net.intf.Interface;
+import org.onosproject.incubator.net.intf.InterfaceService;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.Link;
@@ -93,10 +96,10 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
     private Set<LinkDescription> parseCsr1000vOspfLinks(HierarchicalConfiguration cfg) {
         Set<LinkDescription> links = new HashSet<>();
 
+        InterfaceService interfaceService = checkNotNull(handler().get(InterfaceService.class));
+
         DeviceId localDeviceId = handler().data().deviceId();   // Must be a NETCONF device
         DeviceId remoteDeviceId;                                // Could be an OpenFlow, SNMP, or NETCONF device
-        PortNumber localPortNumber;
-        PortNumber remotePortNumber;
 
         List<Object> ospfLinkInfo = cfg.getList("data.cli-oper-data-block.item.response");
         if (ospfLinkInfo.size() >= 2) {
@@ -133,23 +136,37 @@ public class LinkDiscoveryCsr1000vOspfImpl extends AbstractHandlerBehaviour
                 continue;   // skip if there is no bi-directional link
             }
 
+            PortNumber localPortNumber = PortNumber.portNumber(
+                    Long.parseLong(columns[5].replace("GigabitEthernet", "")));
+            ConnectPoint localConnectPoint = new ConnectPoint(localDeviceId, localPortNumber);
+
             remoteDeviceId = getDeviceId(columns[0]);
             if (remoteDeviceId == null) {
                 log.warn("Cannot resolve ID of remote device {}, skipping...", columns[0]);
                 continue;
             }
 
-            remotePortNumber = getPortNumber(remoteDeviceId, columns[4]);
-            if (remotePortNumber.equals(PortNumber.ANY)) {
-                log.warn("Cannot resolve port number of IP:{} on router:{}", columns[4], columns[0]);
+            Set<Interface> remoteInterfaces = interfaceService.getInterfacesByIp(IpAddress.valueOf(columns[4]));
+            // There could be multiple interfaces assigned with the same IP, check device ID to identify the right one
+            ConnectPoint remoteConnectPoint = null;
+            for (Interface remoteInterface : remoteInterfaces) {
+                if (remoteInterface.connectPoint().deviceId().equals(remoteDeviceId)) {
+                    remoteConnectPoint = remoteInterface.connectPoint();
+                    log.debug("Found remote connect point {} on device {}", remoteConnectPoint, remoteDeviceId);
+                    break;
+                }
             }
 
-            localPortNumber = PortNumber.portNumber(Long.parseLong(columns[5].replace("GigabitEthernet", "")));
+            // If cannot resolve remote connect point from InterfaceService, try to resolve it from port annotations
+            if (remoteConnectPoint == null) {
+                PortNumber remotePortNumber = getPortNumber(remoteDeviceId, columns[4]);
+                if (remotePortNumber.equals(PortNumber.ANY)) {
+                    log.warn("Cannot resolve port number of IP:{} on router:{}", columns[4], columns[0]);
+                }
+                remoteConnectPoint = new ConnectPoint(remoteDeviceId, remotePortNumber);
+            }
 
-            links.add(new DefaultLinkDescription(
-                    new ConnectPoint(localDeviceId, localPortNumber),
-                    new ConnectPoint(remoteDeviceId, remotePortNumber),
-                    Link.Type.DIRECT));
+            links.add(new DefaultLinkDescription(localConnectPoint, remoteConnectPoint, Link.Type.DIRECT));
         }
 
         return links;
