@@ -16,17 +16,21 @@ ENV KARAF_VERSION 3.0.5
 ENV KARAF_ROOT /root/onos/apache-karaf-3.0.5
 ENV KARAF_LOG /root/onos/apache-karaf-3.0.5/data/log/karaf.log
 ENV BUILD_NUMBER docker
-ENV PATH $PATH:$KARAF_ROOT/bin
+ENV MVN_ROOT /src/apache-maven-3.3.9
+ENV PATH $PATH:$KARAF_ROOT/bin:$MVN_ROOT/bin
 
 #Download and Build ONOS
 WORKDIR /src
-RUN     apt-get update && apt-get install -y python maven git curl oracle-java8-installer oracle-java8-set-default && \
+RUN     apt-get update && apt-get install -y python git curl oracle-java8-installer oracle-java8-set-default && \
+        wget http://www-us.apache.org/dist/maven/maven-3/3.3.9/binaries/apache-maven-3.3.9-bin.tar.gz && \
+        tar vxzf apache-maven-3.3.9-bin.tar.gz && \
         git clone https://github.com/opennetworkinglab/onos.git && cd onos && \
         mkdir -p /root/Downloads && \
         mvn clean install && \
         tools/build/onos-package && \
         rm -rf /root/.m2 && cd .. && \
         rm -rf onos && \
+        rm -rf apache-maven-3.3.9-bin && \
         apt-get remove --purge -y `apt-mark showauto` && \
         apt-get install oracle-java8-set-default -y && \
         apt-get clean && apt-get purge -y && apt-get autoremove -y && \
