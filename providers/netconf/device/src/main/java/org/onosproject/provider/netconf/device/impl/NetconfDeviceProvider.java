@@ -17,30 +17,32 @@
 package org.onosproject.provider.netconf.device.impl;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
-import org.apache.felix.scr.annotations.Modified;
-import org.apache.felix.scr.annotations.Property;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.onlab.packet.ChassisId;
-import org.onlab.util.SharedScheduledExecutors;
-import org.onosproject.cfg.ComponentConfigService;
-import org.onosproject.cfg.ConfigProperty;
+import org.onlab.packet.MacAddress;
+import org.onlab.packet.VlanId;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.NodeId;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
 import org.onosproject.incubator.net.config.basics.ConfigException;
+import org.onosproject.incubator.net.intf.Interface;
+import org.onosproject.incubator.net.intf.InterfaceAdminService;
 import org.onosproject.mastership.MastershipService;
 import org.onosproject.net.AnnotationKeys;
+import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.DefaultAnnotations;
 import org.onosproject.net.Device;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.MastershipRole;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.SparseAnnotations;
+import org.onosproject.net.behaviour.LinkDiscovery;
 import org.onosproject.net.behaviour.PortDiscovery;
 import org.onosproject.net.behaviour.PortStatsQuery;
 import org.onosproject.net.config.ConfigFactory;
@@ -56,10 +58,16 @@ import org.onosproject.net.device.DeviceProvider;
 import org.onosproject.net.device.DeviceProviderRegistry;
 import org.onosproject.net.device.DeviceProviderService;
 import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.device.PortDescription;
 import org.onosproject.net.device.PortStatistics;
+import org.onosproject.net.host.InterfaceIpAddress;
 import org.onosproject.net.key.DeviceKey;
 import org.onosproject.net.key.DeviceKeyAdminService;
 import org.onosproject.net.key.DeviceKeyId;
+import org.onosproject.net.link.LinkDescription;
+import org.onosproject.net.link.LinkProvider;
+import org.onosproject.net.link.LinkProviderRegistry;
+import org.onosproject.net.link.LinkProviderService;
 import org.onosproject.net.provider.AbstractProvider;
 import org.onosproject.net.provider.ProviderId;
 import org.onosproject.netconf.NetconfController;
@@ -73,6 +81,10 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -81,7 +93,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static java.util.concurrent.Executors.newScheduledThreadPool;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.onlab.util.Tools.groupedThreads;
 import static org.onosproject.net.Device.Type.ROUTER;
 import static org.onosproject.net.config.basics.SubjectFactories.APP_SUBJECT_FACTORY;
@@ -92,13 +103,16 @@ import static org.slf4j.LoggerFactory.getLogger;
  */
 @Component(immediate = true)
 public class NetconfDeviceProvider extends AbstractProvider
-        implements DeviceProvider {
+        implements DeviceProvider, LinkProvider {
 
     public static final String ACTIVE = "active";
     private final Logger log = getLogger(getClass());
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected DeviceProviderRegistry providerRegistry;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected LinkProviderRegistry linkProviderRegistry;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected NetconfController controller;
@@ -116,13 +130,13 @@ public class NetconfDeviceProvider extends AbstractProvider
     protected DeviceKeyAdminService deviceKeyAdminService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected InterfaceAdminService interfaceAdminService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected MastershipService mastershipService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected ClusterService clusterService;
-
-    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
-    protected ComponentConfigService componentConfigService;
 
     private static final String APP_NAME = "org.onosproject.netconf";
     private static final String SCHEME_NAME = "netconf";
@@ -136,6 +150,7 @@ public class NetconfDeviceProvider extends AbstractProvider
     //FIXME eventually a property
     private static final int ISREACHABLE_TIMEOUT = 2000;
     private static final int DEFAULT_POLL_FREQUENCY_SECONDS = 30;
+    private static final int DEFAULT_PORT_STATS_POLL_FREQUENCY_MILLISECONDS = 5500;
 
     private final ExecutorService executor =
             Executors.newFixedThreadPool(5, groupedThreads("onos/netconfdeviceprovider",
@@ -145,11 +160,19 @@ public class NetconfDeviceProvider extends AbstractProvider
                                      groupedThreads("onos/netconfdeviceprovider",
                                                     "connection-executor-%d", log));
 
+    protected ScheduledExecutorService portStatsPollingExecutor
+            = newScheduledThreadPool(CORE_POOL_SIZE,
+                                     groupedThreads("onos/netconfdeviceprovider",
+                                                    "portstatspolling-executor-%d", log));
+
     private DeviceProviderService providerService;
+    private LinkProviderService linkProviderService;
+    private Map<DeviceId, Set<LinkDescription>> linkDescriptionsOfDevice;
     private NetconfDeviceListener innerNodeListener = new InnerNetconfDeviceListener();
     private InternalDeviceListener deviceListener = new InternalDeviceListener();
     private NodeId localNodeId;
     private ScheduledFuture<?> scheduledTask;
+    private ScheduledFuture<?> scheduledPortStatsPollingTask;
 
     private final ConfigFactory factory =
             new ConfigFactory<ApplicationId, NetconfProviderConfig>(APP_SUBJECT_FACTORY,
@@ -165,21 +188,13 @@ public class NetconfDeviceProvider extends AbstractProvider
     private ApplicationId appId;
     private boolean active;
 
-    private static final int DEFAULT_POLLING_INTERVAL = 5500; // milliseconds
-    @Property(name = "pollingInterval", intValue = DEFAULT_POLLING_INTERVAL,
-            label = "Configure polling interval in millisecond for port statistic querying")
-    private int pollingInterval = DEFAULT_POLLING_INTERVAL;
-
-    private final ScheduledExecutorService scheduledExecutorService = SharedScheduledExecutors.getPoolThreadExecutor();
-    private ScheduledFuture<?> poller;
-
 
     @Activate
     public void activate() {
         active = true;
-        componentConfigService.registerProperties(getClass());
-        modified();
         providerService = providerRegistry.register(this);
+        linkProviderService = linkProviderRegistry.register(this);
+        linkDescriptionsOfDevice = new HashMap<>();
         appId = coreService.registerApplication(APP_NAME);
         cfgService.registerConfigFactory(factory);
         cfgService.addListener(cfgListener);
@@ -188,13 +203,13 @@ public class NetconfDeviceProvider extends AbstractProvider
         executor.execute(NetconfDeviceProvider.this::connectDevices);
         localNodeId = clusterService.getLocalNode().id();
         scheduledTask = schedulePolling();
+        scheduledPortStatsPollingTask = schedulePortStatsPolling();
         log.info("Started");
     }
 
 
     @Deactivate
     public void deactivate() {
-        componentConfigService.unregisterProperties(getClass(), false);
         deviceService.removeListener(deviceListener);
         active = false;
         controller.getNetconfDevices().forEach(id -> {
@@ -204,34 +219,15 @@ public class NetconfDeviceProvider extends AbstractProvider
         controller.removeDeviceListener(innerNodeListener);
         deviceService.removeListener(deviceListener);
         providerRegistry.unregister(this);
+        linkProviderRegistry.unregister(this);
         providerService = null;
+        linkProviderService = null;
+        linkDescriptionsOfDevice = null;
         cfgService.unregisterConfigFactory(factory);
         scheduledTask.cancel(true);
-        if (poller != null) {
-            poller.cancel(false);
-        }
+        scheduledPortStatsPollingTask.cancel(true);
         executor.shutdown();
         log.info("Stopped");
-    }
-
-    @Modified
-    public void modified() {
-        Set<ConfigProperty> configProperties = componentConfigService.getProperties(getClass().getCanonicalName());
-        for (ConfigProperty property : configProperties) {
-            if (property.name().equals("pollingInterval")) {
-                changePollingInterval(property.asInteger());
-            }
-        }
-    }
-
-    private void changePollingInterval(int pollingInterval) {
-        this.pollingInterval = pollingInterval;
-
-        if (poller != null) {
-            poller.cancel(false);
-        }
-        poller = scheduledExecutorService.scheduleAtFixedRate(this::pollDevices, pollingInterval / 10,
-                pollingInterval, MILLISECONDS);
     }
 
     public NetconfDeviceProvider() {
@@ -245,6 +241,13 @@ public class NetconfDeviceProvider extends AbstractProvider
                                                       DEFAULT_POLL_FREQUENCY_SECONDS / 10,
                                                       DEFAULT_POLL_FREQUENCY_SECONDS,
                                                       TimeUnit.SECONDS);
+    }
+
+    private ScheduledFuture schedulePortStatsPolling() {
+        return portStatsPollingExecutor.scheduleAtFixedRate(this::pollDevices,
+                                                            DEFAULT_PORT_STATS_POLL_FREQUENCY_MILLISECONDS / 10,
+                                                            DEFAULT_PORT_STATS_POLL_FREQUENCY_MILLISECONDS,
+                                                            TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -341,6 +344,7 @@ public class NetconfDeviceProvider extends AbstractProvider
         if (isReachable(deviceId)) {
             log.debug("Netconf device {} is reachable, updating ports and stats", deviceId);
             updatePortsAndStats(deviceId);
+            updateLinks(deviceId);
         } else {
             log.debug("Netconf device {} is unreachable, disconnecting", deviceId);
             disconnectDevice(deviceId);
@@ -362,6 +366,31 @@ public class NetconfDeviceProvider extends AbstractProvider
             }
         } else {
             log.warn("No portStatsQuery behaviour for device {}", deviceId);
+        }
+    }
+
+    private void updateLinks(DeviceId deviceId) {
+        Device device = deviceService.getDevice(deviceId);
+        /* Initialize an empty set for device upon first call */
+        linkDescriptionsOfDevice.putIfAbsent(deviceId, new HashSet<>());
+        if (device.is(LinkDiscovery.class)) {
+            LinkDiscovery linkDiscovery = device.as(LinkDiscovery.class);
+            Set<LinkDescription> aliveLinkDescriptions = linkDiscovery.getLinks();
+
+            Preconditions.checkNotNull(aliveLinkDescriptions, "aliveLinkDescription is null");
+
+            /* Update alive links */
+            aliveLinkDescriptions.forEach(desc -> linkProviderService.linkDetected(desc));
+
+            /* Remove vanished links */
+            Set<LinkDescription> vanishedLinkDescriptions = linkDescriptionsOfDevice.get(deviceId);
+            vanishedLinkDescriptions.removeAll(aliveLinkDescriptions);
+            vanishedLinkDescriptions.forEach(desc -> linkProviderService.linkVanished(desc));
+
+            /* Track alive links */
+            linkDescriptionsOfDevice.put(deviceId, aliveLinkDescriptions);
+        } else {
+            log.warn("No LinkDiscovery behaviour for device {}", deviceId);
         }
     }
 
@@ -517,19 +546,57 @@ public class NetconfDeviceProvider extends AbstractProvider
 
     private void discoverPorts(DeviceId deviceId) {
         Device device = deviceService.getDevice(deviceId);
+        List<PortDescription> portDescsriptions = Lists.newArrayList();
         //TODO remove when PortDiscovery is removed from master
         if (device.is(PortDiscovery.class)) {
             PortDiscovery portConfig = device.as(PortDiscovery.class);
+            portDescsriptions = portConfig.getPorts();
             providerService.updatePorts(deviceId,
-                                        portConfig.getPorts());
+                                        portDescsriptions);
         } else if (device.is(DeviceDescriptionDiscovery.class)) {
             DeviceDescriptionDiscovery deviceDescriptionDiscovery =
                     device.as(DeviceDescriptionDiscovery.class);
+            portDescsriptions = deviceDescriptionDiscovery.discoverPortDetails();
             providerService.updatePorts(deviceId,
-                                        deviceDescriptionDiscovery.discoverPortDetails());
+                                        portDescsriptions);
         } else {
             log.warn("No portGetter behaviour for device {}", deviceId);
         }
+
+        if (!portDescsriptions.isEmpty()) {
+            portDescsriptions.forEach(portDescription ->
+                    interfaceAdminService.add(interfaceBuilder(deviceId, portDescription)));
+        } else {
+            log.warn("No port description of device {} is given", deviceId);
+        }
+    }
+
+    /**
+     * Return the Interface built with given device ID and port description.
+     *
+     * @param deviceId device ID
+     * @param desc     port description
+     * @return Interface
+     */
+    public Interface interfaceBuilder(DeviceId deviceId, PortDescription desc) {
+        SparseAnnotations annotations = desc.annotations();
+        String name = annotations.value(AnnotationKeys.PORT_NAME);
+        ConnectPoint connectPoint = new ConnectPoint(deviceId, desc.portNumber());
+        List<InterfaceIpAddress> ipAddresses = Lists.newArrayList();
+
+        Preconditions.checkNotNull(annotations.value(AnnotationKeys.PORT_IP));  // cannot be null
+        ipAddresses.add(InterfaceIpAddress.valueOf(annotations.value(AnnotationKeys.PORT_IP)));
+        // TODO: allow assigning multiple IP addresses to a single interface
+
+        MacAddress mac = annotations.value(AnnotationKeys.PORT_MAC) == null ? MacAddress.ZERO :
+                MacAddress.valueOf(annotations.value(AnnotationKeys.PORT_MAC));
+
+        VlanId vlanId = annotations.value(AnnotationKeys.PORT_VLAN_ID) == null ? VlanId.NONE :
+                VlanId.vlanId(Short.parseShort(annotations.value(AnnotationKeys.PORT_VLAN_ID)));
+
+        log.debug("Found interface {}", connectPoint);
+
+        return new Interface(name, connectPoint, ipAddresses, mac, vlanId);
     }
 
     /**

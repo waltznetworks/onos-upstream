@@ -100,6 +100,16 @@ public final class AnnotationKeys {
     public static final String PORT_MAC = "portMac";
 
     /**
+     * Annotation key for the port IP address.
+     */
+    public static final String PORT_IP = "portIp";
+
+    /**
+     * Annotation key for the port VLAN ID.
+     */
+    public static final String PORT_VLAN_ID = "portVlanId";
+
+    /**
      * Annotation key for the router ID.
      */
     public static final String ROUTER_ID = "routerId";
